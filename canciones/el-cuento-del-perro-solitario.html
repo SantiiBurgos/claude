@@ -1,0 +1,1013 @@
+<title>El cuento del perro solitario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:ital,opsz,wght@0,7..72,400..600;1,7..72,400&display=swap">
+<style>
+/* Layout: una columna de lectura (máx. 40rem). Arriba, título de afiche y mapa de la canción; después cada parte en orden, con los acordes en ámbar sobre la sílaba donde entran; abajo, una barra fija con Ajustes y desplazamiento automático. */
+:root {
+  --bg: #F3F5F9;
+  --surface: #FFFFFF;
+  --ink: #131926;
+  --muted: #586174;
+  --line: #D8DDE7;
+  --btn: #E7EBF2;
+  --chord: #A3510A;
+  --on-chord: #FFFFFF;
+  --chorus-rule: #E4BC92;
+  --bar: rgba(255, 255, 255, 0.9);
+  --shadow: rgba(19, 25, 38, 0.12);
+
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-ui: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-lyric: "Literata", Georgia, "Times New Roman", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1220;
+    --surface: #151C2C;
+    --ink: #ECE7DE;
+    --muted: #8F99AE;
+    --line: #262F44;
+    --btn: #1F2739;
+    --chord: #FFB44A;
+    --on-chord: #1A1206;
+    --chorus-rule: #5C4421;
+    --bar: rgba(16, 22, 36, 0.92);
+    --shadow: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1220;
+  --surface: #151C2C;
+  --ink: #ECE7DE;
+  --muted: #8F99AE;
+  --line: #262F44;
+  --btn: #1F2739;
+  --chord: #FFB44A;
+  --on-chord: #1A1206;
+  --chorus-rule: #5C4421;
+  --bar: rgba(16, 22, 36, 0.92);
+  --shadow: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding-inline: 18px;
+  padding-block: 28px calc(120px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------- Cabecera ---------- */
+.eyebrow {
+  margin: 0 0 .5rem;
+  font: 600 .75rem/1.2 var(--font-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-stretch: 62%;
+  font-size: clamp(2.6rem, 12.5vw, 4.25rem);
+  line-height: .9;
+  letter-spacing: .01em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .25rem .5rem;
+  margin: 1rem 0 0;
+  font: 500 .875rem/1.3 var(--font-ui);
+  color: var(--muted);
+}
+.meta .key {
+  font-weight: 700;
+  font-stretch: 90%;
+  font-size: 1.125rem;
+  color: var(--chord);
+}
+.meta .shift { font: italic 400 .9375rem/1.3 var(--font-lyric); }
+.meta .shift:not(:empty)::before { content: "· "; font-style: normal; }
+
+.map {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .375rem;
+}
+.map li { display: flex; align-items: center; gap: .375rem; }
+.map li + li::before { content: "›"; color: var(--muted); font-size: 1rem; line-height: 1; }
+.map a {
+  display: block;
+  padding: .5rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  font: 600 .8125rem/1.1 var(--font-ui);
+  touch-action: manipulation;
+}
+.map a:hover { border-color: var(--muted); }
+
+/* ---------- Canción ---------- */
+.song {
+  --scale: 1;
+  font-size: calc(1.1875rem * var(--scale));
+  margin-top: 2rem;
+}
+.part {
+  border-top: 1px solid var(--line);
+  padding-top: 1.1rem;
+  scroll-margin-top: calc(12px + env(safe-area-inset-top, 0px));
+}
+.part + .part { margin-top: 2.25rem; }
+.part-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .2rem .75rem;
+  margin-bottom: .9rem;
+}
+.part-name {
+  margin: 0;
+  font: 700 .8125rem/1.2 var(--font-ui);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.part-note {
+  margin: 0;
+  font: italic 400 .9375rem/1.3 var(--font-lyric);
+  color: var(--muted);
+}
+.lines { display: flex; flex-direction: column; gap: .4em; }
+.chorus .lines { border-left: 2px solid var(--chorus-rule); padding-left: .8em; }
+
+/* Cada renglón: palabras que no se cortan, acorde arriba de su sílaba; si el renglón no entra, sigue abajo con sangría. */
+.line {
+  --hang: 1.1em;
+  padding-left: var(--hang);
+  text-indent: calc(var(--hang) * -1);
+  font-family: var(--font-lyric);
+  line-height: 1.2;
+}
+.w { display: inline-flex; align-items: flex-end; vertical-align: bottom; text-indent: 0; }
+.s { display: inline-flex; flex-direction: column; }
+.c {
+  height: 1.3em;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-stretch: 90%;
+  font-size: .78em;
+  line-height: 1.3;
+  color: var(--chord);
+  white-space: nowrap;
+}
+.c.pad { padding-right: .35em; } /* solo cuando el tramo siguiente también lleva acorde */
+.t { line-height: 1.45; white-space: pre; }
+.dash { color: var(--muted); font-weight: 500; padding-inline: .06em; }
+.line.plain .c,
+.w.bare .c,
+.no-chords .c { display: none; }
+
+.prog { font-family: var(--font-ui); line-height: 1.7; }
+.pc {
+  display: inline-block;
+  margin-right: .8em;
+  font-weight: 700;
+  font-stretch: 90%;
+  color: var(--chord);
+}
+.pnote { font: italic 400 .8em/1.3 var(--font-lyric); color: var(--muted); }
+.rep {
+  display: inline-block;
+  vertical-align: .1em;
+  padding: .2em .4em;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  font: 700 .7em/1 var(--font-ui);
+  color: var(--chord);
+}
+.instr { display: none; margin: 0; font: italic 400 .9em/1.4 var(--font-lyric); color: var(--muted); }
+.no-chords .prog { display: none; }
+.no-chords .instr { display: block; }
+
+.fin {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: 2.75rem 0 0;
+  font: 700 .75rem/1 var(--font-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Doble barra final, como en la partitura */
+.fin::before {
+  content: "";
+  width: 9px;
+  height: 1.6rem;
+  border-left: 1.5px solid var(--ink);
+  border-right: 4px solid var(--ink);
+}
+
+/* ---------- Barra y ajustes ---------- */
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; }
+.bar {
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--bar);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border-top: 1px solid var(--line);
+}
+.bar-in {
+  max-width: 40rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scroll-ctl { display: flex; align-items: center; gap: 8px; }
+
+button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 .9375rem/1 var(--font-ui);
+  cursor: pointer;
+}
+.btn svg { width: 20px; height: 20px; flex: none; }
+.btn.ghost[aria-expanded="true"] { background: var(--btn); }
+.btn.play { background: var(--chord); color: var(--on-chord); padding: 0 18px 0 14px; }
+.btn.play.on { width: 44px; padding: 0; justify-content: center; }
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 1rem/1 var(--font-ui);
+  cursor: pointer;
+}
+.icon-btn:disabled { opacity: .4; cursor: default; }
+:focus-visible { outline: 2px solid var(--chord); outline-offset: 2px; }
+
+.speed { display: flex; align-items: center; gap: 6px; }
+.speed .icon-btn { width: 36px; height: 36px; }
+.speed output {
+  display: grid;
+  justify-items: center;
+  min-width: 2rem;
+  font: 700 1rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.speed small {
+  font: 600 .625rem/1.3 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 6px 18px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -10px 30px var(--shadow);
+}
+.panel:not([hidden]) { animation: rise .18s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-height: 60px;
+  padding-block: 8px;
+}
+.row + .row { border-top: 1px solid var(--line); }
+.row-label { font: 600 .9375rem/1.25 var(--font-ui); }
+.row-label small {
+  display: block;
+  margin-top: 2px;
+  font: 400 .8125rem/1.3 var(--font-ui);
+  color: var(--muted);
+}
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper output {
+  min-width: 4.25rem;
+  text-align: center;
+  font: 700 1rem/1.15 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+#keyValName { display: block; font-size: 1.25rem; font-stretch: 90%; color: var(--chord); }
+#keyValShift { display: block; font: 500 .75rem/1.2 var(--font-ui); color: var(--muted); }
+.link {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--chord);
+  font: 600 .8125rem/1.3 var(--font-ui);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.switch {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: none;
+  margin: 0;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--btn);
+  cursor: pointer;
+  transition: background-color .15s;
+}
+.switch::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .15s;
+}
+.switch:checked { background: var(--chord); border-color: var(--chord); }
+.switch:checked::before { transform: translateX(20px); background: var(--on-chord); }
+
+@media (max-width: 359px) {
+  #settingsBtn .lbl { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel:not([hidden]) { animation: none; }
+  .switch, .switch::before { transition: none; }
+}
+</style>
+
+<div class="page" lang="es">
+  <header>
+    <p class="eyebrow">Quemando las naves</p>
+    <h1>El cuento del perro solitario</h1>
+    <p class="meta"><span>Tono</span><b class="key" id="keyName">Em</b><span class="shift" id="keyShift"></span></p>
+    <nav aria-label="Partes de la canción"><ol class="map" id="map"></ol></nav>
+  </header>
+  <main class="song" id="song"></main>
+  <p class="fin">Fin</p>
+</div>
+
+<div class="dock" lang="es">
+  <section class="panel" id="panel" aria-label="Ajustes" hidden>
+    <div class="row">
+      <span class="row-label">Tamaño de letra</span>
+      <div class="stepper">
+        <button class="icon-btn" id="sizeDown" type="button" aria-label="Achicar la letra">A−</button>
+        <output id="sizeVal">100 %</output>
+        <button class="icon-btn" id="sizeUp" type="button" aria-label="Agrandar la letra">A+</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-label">Tono<small>De a medio tono</small><button class="link" id="keyReset" type="button" hidden>Volver a Em</button></div>
+      <div class="stepper">
+        <button class="icon-btn" id="keyDown" type="button" aria-label="Bajar medio tono">−</button>
+        <output id="keyVal"><span id="keyValName">Em</span><span id="keyValShift">original</span></output>
+        <button class="icon-btn" id="keyUp" type="button" aria-label="Subir medio tono">+</button>
+      </div>
+    </div>
+    <div class="row">
+      <label class="row-label" for="chordsToggle">Mostrar acordes</label>
+      <input class="switch" type="checkbox" role="switch" id="chordsToggle" checked>
+    </div>
+    <div class="row">
+      <label class="row-label" for="awakeToggle">Pantalla siempre encendida<small id="awakeNote">Mientras la canción esté abierta</small></label>
+      <input class="switch" type="checkbox" role="switch" id="awakeToggle" checked>
+    </div>
+  </section>
+  <div class="bar">
+    <div class="bar-in">
+      <button class="btn ghost" id="settingsBtn" type="button" aria-label="Ajustes" aria-expanded="false" aria-controls="panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+        <span class="lbl">Ajustes</span>
+      </button>
+      <div class="scroll-ctl">
+        <div class="speed" id="speedCtl" hidden>
+          <button class="icon-btn" id="slower" type="button" aria-label="Más lento">−</button>
+          <output id="speedVal" aria-label="Velocidad"><small>Vel</small><span id="speedNum">3</span></output>
+          <button class="icon-btn" id="faster" type="button" aria-label="Más rápido">+</button>
+        </div>
+        <button class="btn play" id="playBtn" type="button" aria-label="Desplazamiento automático" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path id="playIcon" fill="currentColor" d="M8 5.5v13l11-6.5z"/></svg>
+          <span id="playLbl">Desplazar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!--
+  Letra y acordes. Formato:
+  # Parte | nota              empieza una parte (la nota es opcional)
+  > Em Am G B7 | x2           fila de acordes sin letra; después de "|" va "x2" o una nota
+  [Em]El perro pre[Am]tende   cada acorde va pegado a la sílaba donde entra
+-->
+<script type="text/plain" id="song-src">
+# Intro 1 | Piano solo, una octava más arriba
+> Em Am G B7
+> Em-E Am Dm7 G B7 Em
+
+# Intro 2 | Entramos todos
+> Em Am G B7
+> Em-E Am Dm7 G B7 Em | x2
+
+# Estrofa 1 | Voz y piano solo
+[Em]El perro solitario pre[Am]tende salir [D]
+Solo en la madru[G]gada [B7]
+[Bb]Nada lo acobarda [Am]porque sabe bien
+[G]Que sus [B7]raíces lo en[Em]carnan
+
+# Estrofa 2 | Entramos todos
+El [Em]perro muy seguro sa[Am]lió a pelear el mango
+[D]Triste y acalambrado a su [G]casa lle[B7]gó
+[Bb]porque del [F]trabajo [C]
+Lo ha[B7]bían [Em]rajado [Bb]
+Su familia muy [Am]triste también, [Bb]
+lo acobijo [Am-A-D]
+
+# Estribillo
+[G7]Siempre brinda [C]aguante
+[G7]Siempre va por [C]más
+[Bb]Cuando lo nece[F]sitan [E7]
+El perro siempre está [Am]
+[G7]Recompensado [C]se sentirá
+[G7]Si alcanza la [C]guita
+[Bb]Pero está es la [Am]triste realidad
+[G]Que le [B7]aqueja la vida [Em]
+[Bb]Pero está es la [Am]triste realidad
+[G]que le [B7]aqueja la vida [Em]
+
+# Solo
+> Em | (Solo 2 compases)
+> Em Am D G Bb F C B7
+
+# Estrofa final
+[C7]Al pasar los años el [F7]perro siguio
+[G7]Fiel creyente, él a [C7]Dios le pidió
+[Am7]Que la salud lo acom[Dm7]pañe
+[G7]para ver crecer a sus [C]hijos [C7]
+[F]Recompensado se sentirá
+[Fm]Si ve sus sonrisas
+[C]Solo con eso encon[G7]tró la razón de la [C]vida. [C7]
+[F]Solo con eso encon[G]tró la razón de la [C]vida.
+</script>
+
+<script>
+(() => {
+  'use strict';
+  document.documentElement.lang = 'es';
+
+  const $ = (id) => document.getElementById(id);
+  const SIZES = [0.85, 1, 1.15, 1.3, 1.5, 1.75, 2];
+  const SPEEDS = [8, 11, 15, 19, 24, 30, 37, 45, 55, 68]; // px por segundo con la letra al 100 %
+  const ORIGINAL_KEY = 'Em';
+  const STORE = 'perro-solitario:ajustes';
+  const PLAY = 'M8 5.5v13l11-6.5z';
+  const PAUSE = 'M7 5h3.5v14H7zM13.5 5H17v14h-3.5z';
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const scroller = document.scrollingElement || document.documentElement;
+
+  /* ---------- Ajustes guardados en este navegador ---------- */
+  const prefs = { size: 1, shift: 0, chords: true, speed: 3, awake: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (saved && typeof saved === 'object') Object.assign(prefs, saved);
+  } catch (e) { /* sin almacenamiento: quedan los valores por defecto */ }
+  const clamp = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d);
+  prefs.size = clamp(prefs.size, 0, SIZES.length - 1, 1);
+  prefs.shift = clamp(prefs.shift, -6, 6, 0);
+  prefs.speed = clamp(prefs.speed, 1, SPEEDS.length, 3);
+  prefs.chords = prefs.chords !== false;
+  prefs.awake = prefs.awake !== false;
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(prefs)); } catch (e) { /* no se guarda, sigue andando */ }
+  }
+
+  /* ---------- Lectura del texto de la canción ---------- */
+  // Devuelve palabras; cada palabra es una lista de tramos { c: acorde o null, t: texto }.
+  function parseLyric(src) {
+    const pieces = [];
+    const re = /\[([^\]]+)\]/g;
+    let last = 0;
+    let chord = null;
+    let m;
+    while ((m = re.exec(src))) {
+      pieces.push({ c: chord, t: src.slice(last, m.index) });
+      chord = m[1].trim();
+      last = re.lastIndex;
+    }
+    pieces.push({ c: chord, t: src.slice(last) });
+
+    const words = [];
+    let word = [];
+    for (const p of pieces) {
+      p.t.split(' ').forEach((txt, i) => {
+        if (i > 0 && word.length) { words.push(word); word = []; }
+        const c = i === 0 ? p.c : null;
+        if (txt || c) word.push({ c, t: txt });
+      });
+    }
+    if (word.length) words.push(word);
+    // El espacio queda dentro de la palabra: así un acorde más ancho que su sílaba usa ese hueco y no separa la letra.
+    words.forEach((w, i) => { if (i < words.length - 1) w[w.length - 1].t += ' '; });
+    return words;
+  }
+
+  function parseSong(src) {
+    const parts = [];
+    let part = null;
+    function current() {
+      if (!part) { part = { name: '', note: '', rows: [] }; parts.push(part); }
+      return part;
+    }
+    for (const raw of src.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line[0] === '#') {
+        const [name, note = ''] = line.slice(1).split('|').map((s) => s.trim());
+        part = { name, note, rows: [] };
+        parts.push(part);
+      } else if (line[0] === '>') {
+        const [chords, extra = ''] = line.slice(1).split('|').map((s) => s.trim());
+        const rep = /^x\s*(\d+)$/i.exec(extra);
+        current().rows.push({
+          kind: 'prog',
+          chords: chords.split(/\s+/).filter(Boolean),
+          rep: rep ? rep[1] : '',
+          note: rep ? '' : extra,
+        });
+      } else {
+        current().rows.push({ kind: 'lyric', words: parseLyric(line) });
+      }
+    }
+    return parts;
+  }
+
+  /* ---------- Armado de la página ---------- */
+  function make(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  }
+  function slug(s) {
+    return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'parte';
+  }
+
+  function renderLyric(words) {
+    const line = make('div', 'line');
+    const chords = [];
+    words.forEach((word, i) => {
+      if (i) line.append(document.createElement('wbr'));
+      const w = make('span', 'w');
+      for (const seg of word) {
+        const s = make('span', 's');
+        const c = make('span', 'c');
+        if (seg.c) c.dataset.chord = seg.c;
+        s.append(c, make('span', 't', seg.t || ' '));
+        w.append(s);
+        chords.push(c);
+      }
+      line.append(w);
+    });
+    chords.forEach((c, i) => {
+      if (c.dataset.chord && chords[i + 1] && chords[i + 1].dataset.chord) c.classList.add('pad');
+    });
+    if (!chords.some((c) => c.dataset.chord)) line.classList.add('plain');
+    return line;
+  }
+
+  // Si un renglón largo sigue abajo y ese tramo no tiene acordes, se saca la franja vacía de acordes.
+  function tidyRows() {
+    const lines = song.querySelectorAll('.line:not(.plain)');
+    song.querySelectorAll('.w.bare').forEach((w) => w.classList.remove('bare'));
+    const bare = [];
+    for (const line of lines) {
+      const rows = new Map();
+      for (const w of line.querySelectorAll(':scope > .w')) {
+        const top = w.offsetTop;
+        if (!rows.has(top)) rows.set(top, { words: [], chord: false });
+        const row = rows.get(top);
+        row.words.push(w);
+        if (w.querySelector('.c[data-chord]')) row.chord = true;
+      }
+      if (rows.size > 1) {
+        for (const row of rows.values()) if (!row.chord) bare.push(...row.words);
+      }
+    }
+    bare.forEach((w) => w.classList.add('bare'));
+  }
+  let tidyQueued = false;
+  function queueTidy() {
+    if (tidyQueued) return;
+    tidyQueued = true;
+    requestAnimationFrame(() => { tidyQueued = false; tidyRows(); });
+  }
+
+  function renderProg(row) {
+    const p = make('div', 'prog');
+    row.chords.forEach((ch, i) => {
+      if (i) p.append(' ');
+      const c = make('span', 'pc');
+      c.dataset.chord = ch;
+      p.append(c);
+    });
+    if (row.note) p.append(' ', make('span', 'pnote', row.note));
+    if (row.rep) {
+      const r = make('span', 'rep', '×' + row.rep);
+      r.title = 'Se repite ' + row.rep + ' veces';
+      p.append(' ', r);
+    }
+    return p;
+  }
+
+  function renderPart(part, id) {
+    const sec = make('section', 'part');
+    sec.id = id;
+    if (/estribillo/i.test(part.name)) sec.classList.add('chorus');
+    if (part.name || part.note) {
+      const head = make('header', 'part-head');
+      head.append(make('h2', 'part-name', part.name));
+      if (part.note) head.append(make('p', 'part-note', part.note));
+      sec.append(head);
+    }
+    const lines = make('div', 'lines');
+    let sung = false;
+    for (const row of part.rows) {
+      if (row.kind === 'prog') {
+        lines.append(renderProg(row));
+      } else {
+        lines.append(renderLyric(row.words));
+        sung = true;
+      }
+    }
+    if (!sung) lines.append(make('p', 'instr', 'Instrumental'));
+    sec.append(lines);
+    return sec;
+  }
+
+  const song = $('song');
+  const map = $('map');
+  const usedIds = new Set();
+  for (const part of parseSong($('song-src').textContent)) {
+    const base = slug(part.name);
+    let id = base;
+    for (let n = 2; usedIds.has(id); n++) id = base + '-' + n;
+    usedIds.add(id);
+    song.append(renderPart(part, id));
+    if (part.name) {
+      const a = make('a', '', part.name);
+      a.href = '#' + id;
+      const li = make('li');
+      li.append(a);
+      map.append(li);
+    }
+  }
+
+  /* ---------- Transporte ---------- */
+  const SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const PITCH = {
+    C: 0, 'B#': 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4, F: 5, 'E#': 5,
+    'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11,
+  };
+  // Partiendo de Em: F#m, G#m, Bm y C#m se escriben con sostenidos; los demás tonos, con bemoles.
+  const SHARP_SHIFTS = new Set([2, 4, 7, 9]);
+  const mod12 = (n) => ((n % 12) + 12) % 12;
+
+  function moveNote(name, n) {
+    const pc = PITCH[name];
+    if (pc === undefined) return name;
+    return (SHARP_SHIFTS.has(mod12(n)) ? SHARP : FLAT)[mod12(pc + n)];
+  }
+  function transpose(chord, n) {
+    if (!n) return chord;
+    return chord.split('-').map((part) => {
+      const m = /^([A-G][#b]?)([^/]*)(?:\/([A-G][#b]?))?$/.exec(part);
+      if (!m) return part;
+      return moveNote(m[1], n) + m[2] + (m[3] ? '/' + moveNote(m[3], n) : '');
+    }).join('-');
+  }
+  function paintChord(node) {
+    const name = transpose(node.dataset.chord, prefs.shift);
+    node.textContent = '';
+    name.split('-').forEach((bit, i) => {
+      if (i) node.append(make('span', 'dash', '-'));
+      node.append(bit);
+    });
+  }
+
+  function toneParts(n) {
+    const t = Math.abs(n) / 2;
+    return { t, whole: Math.floor(t), half: t % 1 !== 0 };
+  }
+  function toneLong(n) {
+    const { whole, half } = toneParts(n);
+    const words = ['', 'un', 'dos', 'tres'];
+    const amount = whole === 0
+      ? 'medio tono'
+      : words[whole] + (whole === 1 ? ' tono' : ' tonos') + (half ? ' y medio' : '');
+    return amount + (n > 0 ? ' más arriba' : ' más abajo');
+  }
+  function toneShort(n) {
+    if (!n) return 'original';
+    const { t, whole, half } = toneParts(n);
+    return (n > 0 ? '+' : '−') + (whole || '') + (half ? '½' : '') + (t <= 1 ? ' tono' : ' tonos');
+  }
+
+  /* ---------- Aplicar ajustes ---------- */
+  // Mantiene a la vista el mismo renglón cuando cambia el tamaño o se ocultan los acordes.
+  function keepPlace(fn) {
+    let anchor = null;
+    let top = 0;
+    for (const n of song.querySelectorAll('.part-head, .line, .prog')) {
+      const r = n.getBoundingClientRect();
+      if (r.bottom > 8) { anchor = n; top = r.top; break; }
+    }
+    fn();
+    if (anchor && scroller.scrollTop > 0) {
+      scroller.scrollTop += anchor.getBoundingClientRect().top - top;
+      resyncScroll();
+    }
+  }
+
+  function applySize() {
+    const s = SIZES[prefs.size];
+    song.style.setProperty('--scale', String(s));
+    $('sizeVal').textContent = Math.round(s * 100) + ' %';
+    $('sizeDown').disabled = prefs.size === 0;
+    $('sizeUp').disabled = prefs.size === SIZES.length - 1;
+    tidyRows();
+  }
+  function applyChords() {
+    song.classList.toggle('no-chords', !prefs.chords);
+    $('chordsToggle').checked = prefs.chords;
+    tidyRows();
+  }
+  function applyShift() {
+    const key = transpose(ORIGINAL_KEY, prefs.shift);
+    song.querySelectorAll('[data-chord]').forEach(paintChord);
+    $('keyName').textContent = key;
+    $('keyShift').textContent = prefs.shift ? toneLong(prefs.shift) : '';
+    $('keyValName').textContent = key;
+    $('keyValShift').textContent = toneShort(prefs.shift);
+    $('keyReset').textContent = 'Volver a ' + ORIGINAL_KEY;
+    $('keyReset').hidden = prefs.shift === 0;
+    $('keyDown').disabled = prefs.shift <= -6;
+    $('keyUp').disabled = prefs.shift >= 6;
+    tidyRows();
+  }
+
+  $('sizeDown').addEventListener('click', () => keepPlace(() => {
+    prefs.size = Math.max(0, prefs.size - 1); applySize(); save();
+  }));
+  $('sizeUp').addEventListener('click', () => keepPlace(() => {
+    prefs.size = Math.min(SIZES.length - 1, prefs.size + 1); applySize(); save();
+  }));
+  $('keyDown').addEventListener('click', () => keepPlace(() => {
+    prefs.shift = Math.max(-6, prefs.shift - 1); applyShift(); save();
+  }));
+  $('keyUp').addEventListener('click', () => keepPlace(() => {
+    prefs.shift = Math.min(6, prefs.shift + 1); applyShift(); save();
+  }));
+  $('keyReset').addEventListener('click', () => keepPlace(() => {
+    prefs.shift = 0; applyShift(); save(); $('keyUp').focus();
+  }));
+  $('chordsToggle').addEventListener('change', (e) => keepPlace(() => {
+    prefs.chords = e.target.checked; applyChords(); save();
+  }));
+
+  /* ---------- Panel de ajustes ---------- */
+  const panel = $('panel');
+  const settingsBtn = $('settingsBtn');
+  function setPanel(open) {
+    panel.hidden = !open;
+    settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+  settingsBtn.addEventListener('click', () => setPanel(panel.hidden));
+  document.addEventListener('pointerdown', (e) => {
+    if (!panel.hidden && !panel.contains(e.target) && !settingsBtn.contains(e.target)) setPanel(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panel.hidden) { setPanel(false); settingsBtn.focus(); }
+  });
+
+  /* ---------- Saltar a una parte ---------- */
+  map.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();
+    const target = document.getElementById(a.getAttribute('href').slice(1));
+    if (target) {
+      target.scrollIntoView({ behavior: reduceMotion.matches || playing ? 'auto' : 'smooth', block: 'start' });
+    }
+  });
+
+  /* ---------- Desplazamiento automático ---------- */
+  let playing = false;
+  let raf = 0;
+  let lastT = 0;
+  let pos = 0;
+  let lastSet = -1;
+  let touching = false;
+  let holdUntil = 0;
+
+  function resyncScroll() { pos = scroller.scrollTop; lastSet = -1; }
+
+  function frame(t) {
+    if (!playing) return;
+    const dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0;
+    lastT = t;
+    const y = scroller.scrollTop;
+    // Mientras el dedo mueve la página, se respeta y después se sigue desde ahí.
+    if (touching || t < holdUntil) {
+      resyncScroll();
+      raf = requestAnimationFrame(frame);
+      return;
+    }
+    if (lastSet >= 0 && Math.abs(y - lastSet) > 3) pos = y;
+    pos += SPEEDS[prefs.speed - 1] * SIZES[prefs.size] * dt;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (pos >= max) {
+      scroller.scrollTop = max;
+      stop();
+      return;
+    }
+    scroller.scrollTop = pos;
+    lastSet = scroller.scrollTop;
+    raf = requestAnimationFrame(frame);
+  }
+
+  function start() {
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (max <= 0) return;
+    if (scroller.scrollTop >= max - 2) scroller.scrollTop = 0;
+    playing = true;
+    lastT = 0;
+    resyncScroll();
+    raf = requestAnimationFrame(frame);
+    paintPlay();
+    syncWake(true);
+  }
+  function stop() {
+    playing = false;
+    cancelAnimationFrame(raf);
+    paintPlay();
+    syncWake(false);
+  }
+  function paintPlay() {
+    const btn = $('playBtn');
+    btn.setAttribute('aria-pressed', String(playing));
+    btn.classList.toggle('on', playing);
+    $('playIcon').setAttribute('d', playing ? PAUSE : PLAY);
+    $('playLbl').hidden = playing;
+    $('speedCtl').hidden = !playing;
+  }
+  function paintSpeed() {
+    $('speedNum').textContent = String(prefs.speed);
+    $('slower').disabled = prefs.speed === 1;
+    $('faster').disabled = prefs.speed === SPEEDS.length;
+  }
+  function setSpeed(v) {
+    prefs.speed = clamp(v, 1, SPEEDS.length, 3);
+    paintSpeed();
+    save();
+  }
+
+  $('playBtn').addEventListener('click', () => (playing ? stop() : start()));
+  $('slower').addEventListener('click', () => setSpeed(prefs.speed - 1));
+  $('faster').addEventListener('click', () => setSpeed(prefs.speed + 1));
+
+  const outsideDock = (e) => !(e.target instanceof Element && e.target.closest('.dock'));
+  window.addEventListener('touchstart', (e) => { if (outsideDock(e)) touching = true; }, { passive: true });
+  const release = () => {
+    if (!touching) return;
+    touching = false;
+    holdUntil = performance.now() + 700;
+  };
+  window.addEventListener('touchend', release, { passive: true });
+  window.addEventListener('touchcancel', release, { passive: true });
+  window.addEventListener('wheel', () => { holdUntil = performance.now() + 400; }, { passive: true });
+
+  /* ---------- Pantalla encendida ---------- */
+  let wake = null;
+  let wakeBusy = false;
+  let wakeFailed = false;
+  const wantWake = () => (prefs.awake || playing) && document.visibilityState === 'visible';
+
+  async function syncWake(fromGesture) {
+    if (wantWake() && !wake && !wakeBusy) {
+      if (!('wakeLock' in navigator)) {
+        wakeFailed = true;
+        paintAwake();
+        return;
+      }
+      wakeBusy = true;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        lock.addEventListener('release', () => { if (wake === lock) wake = null; });
+        wake = lock;
+        wakeFailed = false;
+      } catch (e) {
+        // Algunos navegadores la conceden solo después de un toque; el aviso sale si falla igual.
+        if (fromGesture === true) wakeFailed = true;
+      }
+      wakeBusy = false;
+      paintAwake();
+      if (!wantWake() && wake) syncWake(false);
+    } else if (!wantWake() && wake) {
+      const lock = wake;
+      wake = null;
+      try { await lock.release(); } catch (e) { /* ya estaba liberada */ }
+    }
+  }
+  function paintAwake() {
+    $('awakeToggle').checked = prefs.awake;
+    $('awakeNote').textContent = prefs.awake && wakeFailed
+      ? 'No disponible en este navegador'
+      : 'Mientras la canción esté abierta';
+  }
+  $('awakeToggle').addEventListener('change', (e) => {
+    prefs.awake = e.target.checked;
+    wakeFailed = false;
+    save();
+    paintAwake();
+    syncWake(true);
+  });
+  document.addEventListener('visibilitychange', () => syncWake(false));
+  window.addEventListener('pointerdown', () => {
+    if (wantWake() && !wake && !wakeFailed) syncWake(true);
+  }, { passive: true });
+
+  /* ---------- Inicio ---------- */
+  applySize();
+  applyChords();
+  applyShift();
+  paintSpeed();
+  paintPlay();
+  paintAwake();
+  syncWake(false);
+
+  // Cuando cambian el ancho o las fuentes, los renglones pueden cortar distinto.
+  window.addEventListener('resize', queueTidy);
+  window.addEventListener('load', queueTidy);
+  if (document.fonts) {
+    document.fonts.addEventListener('loadingdone', queueTidy);
+    document.fonts.ready.then(queueTidy);
+  }
+})();
+</script>
