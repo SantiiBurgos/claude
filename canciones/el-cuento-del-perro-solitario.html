@@ -62,6 +62,7 @@ body {
 }
 
 .page {
+  overflow-x: clip;
   max-width: 40rem;
   margin: 0 auto;
   padding-inline: 18px;
@@ -115,7 +116,7 @@ h1 {
   gap: .5rem .375rem;
 }
 .map li { display: flex; align-items: center; gap: .375rem; }
-.map li + li::before { content: "›"; color: var(--muted); font-size: 1rem; line-height: 1; }
+.map li:not(:last-child)::after { content: "›"; color: var(--muted); font-size: 1rem; line-height: 1; }
 .map a {
   display: block;
   padding: .5rem .7rem;
@@ -183,6 +184,7 @@ h1 {
   white-space: nowrap;
 }
 .c.pad { padding-right: .35em; } /* solo cuando el tramo siguiente también lleva acorde */
+.c.hang { width: 0; overflow: visible; } /* se apoya sobre la sílaba siguiente, que no lleva acorde */
 .t { line-height: 1.45; white-space: pre; }
 .dash { color: var(--muted); font-weight: 500; padding-inline: .06em; }
 .line.plain .c,
@@ -190,7 +192,8 @@ h1 {
 .no-chords .c { display: none; }
 
 .prog { font-family: var(--font-ui); line-height: 1.7; }
-.tok { display: inline-block; margin-right: .8em; }
+.tok, .grp { display: inline-block; margin-right: .8em; }
+.grp { white-space: nowrap; }
 .pc {
   font-weight: 700;
   font-stretch: 90%;
@@ -462,11 +465,11 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 # Intro
 ~ Piano solo, una octava más arriba
 > Em Am (G B7) Em Em
-~ Entran guitarra, bajo y batería · rápido, cada acorde dura la mitad
+~ Entran guitarra, bajo y batería · rápido, medio compás cada acorde
 > Em E Am Dm7 G B7
 ~ Piano solo
 > Em Em
-~ Vuelven guitarra, bajo y batería · rápido, cada acorde dura la mitad
+~ Vuelven guitarra, bajo y batería · rápido, medio compás cada acorde
 > Em E Am Dm7 G B7
 ~ Piano solo
 > Em Em
@@ -477,7 +480,8 @@ Solo en la madru[G]gada [B7]
 [Bb]Nada lo acobarda [Am]porque sabe bien
 [G]Que sus [B7]raíces lo en[Em]carnan
 
-# Puente | Piano solo
+# Puente
+~ Piano solo
 > Em
 
 # Estrofa 2 | Toda la banda
@@ -496,6 +500,7 @@ El perro siempre está [Am]
 ~ En vals, hasta «guita»
 [G7]Recompensado [C]se sentirá
 [G7]Si alcanza la [C]guita
+~ Termina el vals
 [Bb]Pero esta es la [Am]triste realidad
 [G]Que le [B7]aqueja la vida [Em]
 [Bb]Pero esta es la [Am]triste realidad
@@ -506,14 +511,15 @@ El perro siempre está [Am]
 > Em Am D G Bb F C
 > B7 | x4
 
-# Solo de flautas | Sin la banda
-~ Sobre el final entra la batería y va cargando mientras siguen las flautas
+# Solo de flautas | Sin la banda, en C
+~ En la demo, de 2:43 a 3:05
+~ Desde 3:06 entra la batería y va cargando mientras siguen las flautas
 
-# Solo de batería
+# Solo de batería | En la demo, de 3:11 a 3:20
+
+# Estrofa final | Con piano en lugar de flautas
 ~ Entra toda la banda
 > Cmaj7 F7 G7 Cmaj7
-
-# Estrofa final | Toda la banda, con piano en lugar de flautas
 [Cmaj7]Al pasar los años el [F7]perro siguió
 [G7]Fiel creyente, él a [Cmaj7]Dios le pidió
 [Am7]Que la salud lo acom[Dm7]pañe
@@ -645,8 +651,12 @@ El perro siempre está [Am]
       }
       line.append(w);
     });
+    // Un acorde más ancho que su sílaba se apoya sobre lo que sigue si ahí no hay otro acorde; si lo hay, deja aire.
     chords.forEach((c, i) => {
-      if (c.dataset.chord && chords[i + 1] && chords[i + 1].dataset.chord) c.classList.add('pad');
+      const next = chords[i + 1];
+      if (!c.dataset.chord || !next) return;
+      if (next.dataset.chord) c.classList.add('pad');
+      else if (c.nextSibling.textContent.trim()) c.classList.add('hang');
     });
     if (!chords.some((c) => c.dataset.chord)) line.classList.add('plain');
     return line;
@@ -681,22 +691,32 @@ El perro siempre está [Am]
 
   function renderProg(row) {
     const p = make('div', 'prog');
-    // "(G B7)": los paréntesis agrupan acordes que comparten compás; se muestran tenues.
+    // "(G B7)": los paréntesis agrupan acordes que comparten compás; van juntos y no se cortan de renglón.
+    let group = null;
     row.chords.forEach((tok, i) => {
-      if (i) p.append(' ');
       const [, open, name, close] = /^(\(?)(.*?)(\)?)$/.exec(tok);
-      const t = make('span', 'tok');
-      if (open) t.append(make('span', 'paren', '('));
-      const c = make('span', 'pc');
+      if (open) {
+        if (i) p.append(' ');
+        group = make('span', 'grp');
+        group.append(make('span', 'paren', '('));
+        p.append(group);
+      } else if (group) {
+        group.append(' ');
+      } else if (i) {
+        p.append(' ');
+      }
+      const c = make('span', group ? 'pc' : 'pc tok');
       c.dataset.chord = name;
-      t.append(c);
-      if (close) t.append(make('span', 'paren', ')'));
-      p.append(t);
+      (group || p).append(c);
+      if (close && group) {
+        group.append(make('span', 'paren', ')'));
+        group = null;
+      }
     });
     if (row.note) p.append(' ', make('span', 'pnote', row.note));
     if (row.rep) {
       const r = make('span', 'rep', '×' + row.rep);
-      r.title = 'Se repite ' + row.rep + ' veces';
+      r.title = row.rep + ' veces';
       p.append(' ', r);
     }
     return p;
@@ -802,16 +822,20 @@ El perro siempre está [Am]
 
   /* ---------- Aplicar ajustes ---------- */
   // Mantiene a la vista el mismo renglón cuando cambia el tamaño o se ocultan los acordes.
+  // Se toma como referencia el primer renglón visible que siga a la vista después del cambio.
   function keepPlace(fn) {
-    let anchor = null;
-    let top = 0;
-    for (const n of song.querySelectorAll('.part-head, .line, .prog, .cue')) {
+    const before = [];
+    for (const n of song.querySelectorAll('.part-head, .line, .prog, .cue, .instr')) {
       const r = n.getBoundingClientRect();
-      if (r.bottom > 8) { anchor = n; top = r.top; break; }
+      if (r.height && r.bottom > 8) {
+        before.push([n, r.top]);
+        if (before.length > 8) break;
+      }
     }
     fn();
-    if (anchor && scroller.scrollTop > 0) {
-      scroller.scrollTop += anchor.getBoundingClientRect().top - top;
+    const kept = before.find(([n]) => n.getClientRects().length > 0);
+    if (kept && scroller.scrollTop > 0) {
+      scroller.scrollTop += kept[0].getBoundingClientRect().top - kept[1];
       resyncScroll();
     }
   }
