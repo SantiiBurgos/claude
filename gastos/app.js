@@ -448,6 +448,56 @@ async function importar(file) {
   } catch { toast('Ese archivo no es un respaldo válido'); }
 }
 
+/* ---------- lectura del comprobante (OCR, corre en el teléfono) ---------- */
+const OCR = { workerPath: 'ocr/worker.min.js', corePath: 'ocr/', langPath: 'ocr/', workerBlobURL: false };
+let ocr = null;
+function motorOcr() {
+  return ocr ??= (async () => {
+    if (!window.Tesseract) await new Promise((ok, err) => { const s = document.createElement('script'); s.src = 'ocr/tesseract.min.js'; s.onload = ok; s.onerror = err; document.head.append(s); });
+    const w = await Tesseract.createWorker('spa', 1, OCR);
+    await w.setParameters({ tessedit_pageseg_mode: '11' });
+    return w;
+  })().catch(e => { ocr = null; throw e; });
+}
+const MES_NUM = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
+// Devuelve { monto, fecha } con lo que se pudo leer de la imagen.
+async function leerComprobante(blob) {
+  const bmp = await createImageBitmap(blob), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const { data } = await (await motorOcr()).recognize(c, {}, { blocks: true });
+  // El importe del comprobante es el "$ ..." escrito más grande.
+  let mejor = null;
+  for (const b of data.blocks || []) for (const p of b.paragraphs) for (const l of p.lines) {
+    const m = l.text.match(/\$\s?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?/);
+    if (!m) continue;
+    const h = l.bbox.y1 - l.bbox.y0, monto = soloNum(m[1]);
+    if (monto && (!mejor || h > mejor.h)) mejor = { h, monto };
+  }
+  let fecha = '';
+  const f = data.text.toLowerCase().match(/\b(\d{1,2})\s*(?:\/|-|de)\s*(\d{1,2}|[a-z]{3,10})\s*(?:\/|-|de)\s*(\d{4})\b/);
+  if (f) {
+    const mes = Number(f[2]) || MES_NUM[f[2].slice(0, 3)], iso = `${f[3]}-${pad(mes)}-${pad(f[1])}`;
+    if (mes >= 1 && mes <= 12 && Number(f[1]) <= 31 && iso <= hoy()) fecha = iso;
+  }
+  return { monto: mejor?.monto || 0, fecha };
+}
+// Lee el comprobante y completa el formulario abierto, sin pisar lo que ya se escribió.
+async function autocompletar(blob) {
+  if (!blob?.type.startsWith('image/')) return;
+  const mia = hoja, campo = () => $('#form [name=monto]');
+  if (!campo() || soloNum(campo().value)) return;
+  toast('Leyendo el comprobante…');
+  try {
+    const r = await leerComprobante(blob);
+    if (hoja !== mia || !campo()) return;
+    if (r.monto && !soloNum(campo().value)) campo().value = miles(r.monto);
+    if (r.fecha && $('#form [name=fecha]')) $('#form [name=fecha]').value = r.fecha;
+    toast(r.monto ? `Leí ${fmt(r.monto)}: revisá y guardá` : 'No pude leer el monto: completalo a mano');
+  } catch { toast('No pude leer el comprobante: completá el monto'); }
+}
+
 /* ---------- compartir desde otra app ---------- */
 async function levantarCompartido() {
   try {
@@ -458,8 +508,8 @@ async function levantarCompartido() {
     if (a) { const b = await a.blob(); if (b.type.startsWith('image/') || b.type === 'application/pdf') img = await achicar(b); }
     await c.delete('compartido-texto'); await c.delete('compartido-archivo');
     const m = texto.match(/\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
-    formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
-    if (!m && img) toast('Comprobante adjunto: completá el monto');
+    await formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
+    if (!m && img) { if (img.type.startsWith('image/')) autocompletar(img); else toast('Comprobante adjunto: completá el monto'); }
   } catch { formGasto(); }
 }
 
@@ -519,7 +569,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   if (e.target.id === 'importar' && e.target.files[0]) return importar(e.target.files[0]);
   if (e.target.id === 'adjunto' && e.target.files[0] && hoja?.setImg) {
-    const b = await achicar(e.target.files[0]); hoja.setImg(b); mostrarThumb(b); return;
+    const b = await achicar(e.target.files[0]); hoja.setImg(b); mostrarThumb(b); autocompletar(b); return;
   }
   if (hoja && e.target.closest('#form')) visibilidad();
 });
@@ -529,6 +579,8 @@ document.addEventListener('change', async e => {
   try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; } catch { toast('No se pudo leer lo guardado'); }
   render();
   navigator.storage?.persist?.();
+  // Baja en segundo plano lo necesario para leer comprobantes, así después funciona sin conexión.
+  setTimeout(() => { if (navigator.onLine) for (const f of ['tesseract.min.js', 'worker.min.js', 'spa.traineddata.gz', 'tesseract-core-relaxedsimd-lstm.wasm.js']) fetch('ocr/' + f).catch(() => {}); }, 6000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   const p = new URLSearchParams(location.search);
   if (p.has('compartido')) { history.replaceState(null, '', './'); levantarCompartido(); }
