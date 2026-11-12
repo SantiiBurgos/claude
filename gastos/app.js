@@ -78,6 +78,20 @@ function dolarMes(m) {
   if (!ks.length) return 0;
   return S.dolares[ks.filter(k => k <= m).pop() || ks[0]];
 }
+// Trae el dólar tarjeta (ya incluye impuestos) y lo deja como cotización del mes en curso.
+// Solo consulta si hay algo cargado en dólares, y como mucho una vez por día.
+async function actualizarDolar(forzar) {
+  if (S.dolarAuto === false) return;
+  if (!forzar && (S.dolarFecha === hoy() || !S.compromisos.some(c => c.usd))) return;
+  try {
+    const r = await fetch('https://dolarapi.com/v1/dolares/tarjeta', { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+    const v = Math.round(Number((await r.json()).venta));
+    if (!r.ok || !(v > 0)) throw 0;
+    (S.dolares ??= {})[hoy().slice(0, 7)] = v; S.dolarFecha = hoy(); S.dolarError = false;
+    await guardar();
+  } catch { S.dolarError = true; }
+  if (!hoja) render();
+}
 const fmtUsd = n => 'US$ ' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 // Devuelve cómo aparece un compromiso en un mes dado, o null si no corresponde.
 function enMes(c, m) {
@@ -249,7 +263,7 @@ function vAjustes() {
     <div class="card"><button class="row" data-act="editar-presu"><span class="grow">Tope</span><span class="amt num">${S.presupuesto ? fmt(S.presupuesto) : 'Sin tope'}</span></button></div>
     <h2><span>Dólar de referencia</span></h2>
     <div class="card"><button class="row" data-act="editar-dolar"><span class="grow">Valor en ${mesNombre(ym)}</span><span class="amt num">${dolarMes(ym) ? fmt(dolarMes(ym)) : 'Sin cargar'}</span></button></div>
-    <div class="hint">Se usa para pasar a pesos lo que cargues en dólares (suscripciones). Poné el valor que te termina cobrando la tarjeta, con impuestos.</div>
+    <div class="hint">Se usa para pasar a pesos lo que cargues en dólares (suscripciones). ${S.dolarAuto === false ? 'Lo cargás vos a mano.' : `Se actualiza solo con el dólar tarjeta, que ya incluye impuestos. ${S.dolarError ? '<b>No se pudo actualizar la última vez</b>; se usa el último valor guardado.' : S.dolarFecha ? `Última actualización: ${new Date(S.dolarFecha + 'T12:00').toLocaleDateString('es-AR')}.` : 'Se consulta cuando cargues algo en dólares.'}`}</div>
     <h2><span>Tarjetas y medios de pago</span></h2><div class="card">
     ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}"><span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
     <button class="row" data-act="nueva-cuenta"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
@@ -407,9 +421,10 @@ async function formComp(c, esIngreso) {
       ...(esIngreso ? [] : [{ name: 'usd', type: 'number', label: 'Precio en dólares (opcional: reemplaza el monto en pesos)', value: c?.usd || '', placeholder: 'Ej: 9,99' }]),
       ...(esIngreso ? [] : [{ name: 'ajuste', type: 'number', label: 'Aumento estimado por mes, en % (opcional, ej. préstamo UVA)', value: c?.ajuste || '', showIf: v => v.tipo !== 'unico' }]),
     ],
-    onSave: v => {
+    onSave: async v => {
       if (v.usd > 0) {
-        if (!dolarMes(ym)) return 'Cargá primero el dólar de referencia en Ajustes';
+        if (!dolarMes(ym)) await actualizarDolar(true);
+        if (!dolarMes(ym)) return 'No pude traer el dólar: cargalo a mano en Ajustes';
         v.monto = Math.round(v.usd * dolarMes(ym)); v.ajuste = 0;
       }
       if (!v.monto) return 'Poné un monto';
@@ -481,11 +496,21 @@ function formCat(c) {
 }
 function formDolar() {
   abrir({
-    title: `Dólar desde ${mesNombre(ym)}`,
-    fields: [{ name: 'dolar', type: 'money', value: dolarMes(ym) }],
-    onSave: v => {
+    title: 'Dólar de referencia', foco: false,
+    fields: [
+      { name: 'modo', type: 'chips', value: S.dolarAuto === false ? 'manual' : 'auto', options: [{ v: 'auto', l: 'Automático (dólar tarjeta)' }, { v: 'manual', l: 'Lo cargo yo' }] },
+      { name: 'dolar', type: 'money', value: dolarMes(ym), showIf: v => v.modo === 'manual' },
+      { name: 'desde', type: 'nota', showIf: v => v.modo === 'manual', texto: () => `Vale desde ${mesNombre(ym)}; los meses anteriores conservan su valor.` },
+    ],
+    onSave: async v => {
+      S.dolarAuto = v.modo === 'auto';
+      if (S.dolarAuto) {
+        await actualizarDolar(true);
+        if (S.dolarError) toast('No pude traer la cotización ahora; se reintenta al abrir la app');
+        return;
+      }
       if (!v.dolar) return 'Poné un valor';
-      (S.dolares ??= {})[ym] = v.dolar; // los meses anteriores conservan su cotización
+      (S.dolares ??= {})[ym] = v.dolar;
     },
   });
 }
@@ -669,6 +694,7 @@ document.addEventListener('change', async e => {
   try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; } catch { toast('No se pudo leer lo guardado'); }
   render();
   navigator.storage?.persist?.();
+  actualizarDolar();
   // Baja en segundo plano lo necesario para leer comprobantes, así después funciona sin conexión.
   setTimeout(() => { if (navigator.onLine) for (const f of ['tesseract.min.js', 'worker.min.js', 'spa.traineddata.gz', 'tesseract-core-relaxedsimd-lstm.wasm.js']) fetch('ocr/' + f).catch(() => {}); }, 6000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
