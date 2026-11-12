@@ -1,14 +1,14 @@
 :root {
   --bg: #f4f2ec; --surface: #ffffff; --surface-2: #ebe8df; --line: #dedacd;
   --text: #171a17; --muted: #6c7268; --accent: #2f6b1e; --on-accent: #ffffff;
-  --bad: #c0392b; --warn: #b7791f;
+  --bad: #c0392b; --warn: #b7791f; --s1: #2a78d6; --s2: #eb6834;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1110; --surface: #181b19; --surface-2: #222623; --line: #2b302c;
     --text: #eef0ea; --muted: #8d948c; --accent: #b8f04a; --on-accent: #10140a;
-    --bad: #ff6b5e; --warn: #f0b84a;
+    --bad: #ff6b5e; --warn: #f0b84a; --s1: #3987e5; --s2: #d95926;
     color-scheme: dark;
   }
 }
@@ -140,3 +140,23 @@ td.est { color: var(--muted); }
   position: fixed; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 160px); z-index: 20; margin: 0 auto; max-width: 420px;
   background: var(--text); color: var(--bg); padding: 13px 16px; border-radius: 14px; text-align: center; font-size: 14px; font-weight: 600;
 }
+
+.vto { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font-size: 14px; }
+.vto > span:first-child { color: var(--warn); font-size: 18px; }
+.filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+.filtros select, #q { width: 100%; padding: 13px 12px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); outline: none; }
+.filtros select:focus, #q:focus { border-color: var(--accent); }
+.leyenda { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.leyenda i, .evo i { display: block; }
+.leyenda span { display: flex; align-items: center; gap: 6px; }
+.leyenda i { width: 10px; height: 10px; border-radius: 3px; }
+.s1 { background: var(--s1); } .s2 { background: var(--s2); }
+.evo { display: grid; grid-template-columns: repeat(6, 1fr); height: 170px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.evo button { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-height: 0; border-radius: 10px 10px 0 0; }
+.evo button.on { background: var(--surface-2); }
+.evo .col { flex: 1; min-height: 0; width: 22px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; padding-top: 8px; }
+.evo .col i { min-height: 3px; }
+.evo .col i:first-child { border-radius: 4px 4px 0 0; }
+.evo .ml { font-size: 12px; color: var(--muted); padding: 5px 0; text-transform: capitalize; }
+.evo button.on .ml { color: var(--text); font-weight: 650; }
+.vto .grow { flex: 1; }

@@ -71,6 +71,7 @@ const inicial = () => ({
 let S = inicial();
 let ym = hoy().slice(0, 7);
 let tab = 'inicio';
+let evoSel = null; // mes elegido en el gráfico de evolución
 const guardar = () => db.set('estado', S).catch(() => toast('No se pudo guardar'));
 
 /* ---------- cálculos ---------- */
@@ -129,7 +130,7 @@ function render() {
   const actual = ym === hoy().slice(0, 7);
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
   for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === tab);
-  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes })[tab]();
+  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar })[tab]();
 }
 
 // Gastos que se repiten (mismo detalle, categoría y medio), para cargarlos en un toque.
@@ -145,10 +146,28 @@ function frecuentes() {
 }
 const diasSinRespaldo = () => S.ultimoRespaldo ? Math.round((Date.parse(hoy()) - Date.parse(S.ultimoRespaldo)) / 864e5) : Infinity;
 
+// Compras hechas con tarjeta: se pagan en Mensual, pero se muestran el día en que se hicieron.
+const comprasCredito = () => S.compromisos.filter(c => c.fecha).map(c => ({ id: c.id, fecha: c.fecha, cat: c.cat, desc: c.nombre, cuentaId: c.cuentaId, img: c.img, credito: true, monto: c.monto * (c.tipo === 'cuotas' ? c.total : 1), plan: `${c.tipo === 'cuotas' ? c.total + ' cuotas' : '1 pago'} desde ${mesCorto(c.inicio)}` }));
+function filaMov(g, conFecha) {
+  const cat = categoria(g.cat);
+  return `<button class="row" data-act="${g.credito ? 'editar-comp' : 'editar-gasto'}" data-id="${g.id}">
+    <span class="emoji">${esc(cat.emoji)}</span>
+    <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${g.img ? ' · 📎' : ''}</div></span>
+    <span class="amt num" ${g.credito ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
+}
+// Tarjetas con algo sin pagar que vencen en los próximos 7 días (o ya vencieron).
+function vencimientos() {
+  const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
+  return S.cuentas.filter(c => c.vence).map(c => {
+    const falta = sum(compsMes(act).filter(x => x.c.cuentaId === c.id && !pagos[x.c.id]), x => x.monto);
+    return { c, falta, dias: c.vence - dia };
+  }).filter(v => v.falta > 0 && v.dias <= 7).sort((a, b) => a.dias - b.dias);
+}
+
 function vInicio() {
   const ing = totalIngresos(ym), comp = totalComps(ym), gas = totalGastos(ym);
   const queda = ing - comp - gas;
-  const gs = gastosMes(ym).sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
+  const gs = [...gastosMes(ym), ...comprasCredito().filter(g => g.fecha.startsWith(ym))].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   let presu = '';
   if (S.presupuesto > 0) {
     const pct = Math.min(100, gas / S.presupuesto * 100), libre = S.presupuesto - gas;
@@ -167,25 +186,40 @@ function vInicio() {
   for (const g of gs) {
     if (g.fecha !== dia) {
       dia = g.fecha;
-      const tot = sum(gs.filter(x => x.fecha === dia), x => x.monto);
+      const tot = sum(gs.filter(x => x.fecha === dia && !x.credito), x => x.monto);
       lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num">${fmt(tot)}</span></h2><div class="card">`;
     }
-    const cat = categoria(g.cat);
-    lista += `<button class="row" data-act="editar-gasto" data-id="${g.id}">
-      <span class="emoji">${esc(cat.emoji)}</span>
-      <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${esc(cuenta(g.cuentaId).nombre)}${g.img ? ' · 📎' : ''}</div></span>
-      <span class="amt num">${fmt(g.monto)}</span></button>`;
+    lista += filaMov(g);
   }
   lista = lista ? lista + '</div>' : `<div class="empty">Todavía no anotaste gastos este mes.<br>Tocá <b>+</b> para cargar el primero.</div>`;
   const dias = diasSinRespaldo(), hayDatos = S.gastos.length + S.compromisos.length + S.ingresos.length > 0;
   const aviso = hayDatos && dias >= 30 ? `<div class="card pad aviso"><p>${dias === Infinity ? 'Todavía no guardaste ningún respaldo.' : `Hace ${dias} días que no guardás un respaldo.`} Tus datos viven solo en este teléfono.</p><button class="btn" data-act="respaldar">Guardar respaldo ahora</button></div>` : '';
   const frec = frecuentes();
   const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
-  return `${aviso}<section class="hero">
+  const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
+  const buscar = S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '';
+  return `${aviso}${venc}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}</div>
-    </section>${rep}${presu}${lista}`;
+    </section>${rep}${presu}${lista}${buscar}`;
+}
+
+const filtro = { q: '', cat: '', cta: '' };
+function vBuscar() {
+  const op = (lista, sel, todos) => `<option value="">${todos}</option>` + lista.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
+  return `<div class="f"><input type="text" id="q" placeholder="Buscar por detalle…" value="${esc(filtro.q)}" autocomplete="off"></div>
+    <div class="filtros"><select id="f-cat" aria-label="Categoría">${op(S.categorias, filtro.cat, 'Todas las categorías')}</select>
+    <select id="f-cta" aria-label="Medio de pago">${op(S.cuentas, filtro.cta, 'Todos los medios')}</select></div>
+    <div id="res">${resultados()}</div>`;
+}
+function resultados() {
+  const q = filtro.q.trim().toLowerCase();
+  const r = [...S.gastos, ...comprasCredito()].filter(g => (!q || (g.desc || categoria(g.cat).nombre).toLowerCase().includes(q)) && (!filtro.cat || g.cat === filtro.cat) && (!filtro.cta || g.cuentaId === filtro.cta))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
+  if (!r.length) return `<div class="empty">No hay movimientos que coincidan.</div>`;
+  return `<h2><span>${r.length} ${r.length === 1 ? 'movimiento' : 'movimientos'}</span><span class="num">${fmt(sum(r, g => g.monto))}</span></h2>
+    <div class="card">${r.slice(0, 200).map(g => filaMov(g, true)).join('')}</div>${r.length > 200 ? '<div class="hint">Se muestran los 200 más recientes: afiná la búsqueda para ver el resto.</div>' : ''}`;
 }
 
 function etiquetaDia(f) {
@@ -193,7 +227,7 @@ function etiquetaDia(f) {
   if (f === h) return 'Hoy';
   const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
   if (f === `${ayer.getFullYear()}-${pad(ayer.getMonth() + 1)}-${pad(ayer.getDate())}`) return 'Ayer';
-  return d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', ...(f.slice(0, 4) !== h.slice(0, 4) ? { year: '2-digit' } : {}) });
 }
 
 function vMensual() {
@@ -218,6 +252,8 @@ function vMensual() {
         <span class="badge ${x.ultima ? 'last' : ''}">${x.etiqueta}</span>
         <span class="amt num">${fmt(x.monto)}</span></div>`;
     }
+    const todo = its.every(x => pagos[x.c.id]);
+    if (its.length > 1) html += `<button class="row" data-act="pagar-cuenta" data-id="${cta.id}"><span class="check ${todo ? 'on' : ''}">✓</span><span class="grow s">${todo ? 'Todo pagado' : 'Marcar todo como pagado'}</span></button>`;
     html += `<div class="row"><span class="grow s">Sigue en ${mesNombre(sig)}</span><span class="num s">${fmt(enSig)}</span></div></div>`;
   }
   const huerfanos = items.filter(x => !S.cuentas.some(c => c.id === x.c.cuentaId));
@@ -240,11 +276,27 @@ function vResumen() {
     <div class="row"><span class="grow">Gastos del día a día</span><span class="amt num">${fmt(-gas)}</span></div>
     <div class="row total"><span class="grow">Te queda</span><span class="amt num" ${ing - comp - gas < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(ing - comp - gas)}</span></div></div>`;
 
-  const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id), g => g.monto) })).filter(x => x.t > 0).sort((a, b) => b.t - a.t);
+  const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id), g => g.monto) })).filter(x => x.t > 0 || x.c.tope > 0).sort((a, b) => b.t - a.t);
   if (porCat.length) {
+    const max = Math.max(1, porCat[0].t);
     html += `<h2><span>En qué se fue</span><span class="num">${fmt(gas)}</span></h2><div class="card pad">` + porCat.map(x => `
-      <div class="kv"><span style="color:var(--text)">${esc(x.c.emoji)} ${esc(x.c.nombre)}</span><span class="num">${fmt(x.t)} · ${Math.round(x.t / gas * 100)}%</span></div>
-      <div class="bar"><div style="width:${x.t / porCat[0].t * 100}%"></div></div>`).join('') + '</div>';
+      <div class="kv"><span style="color:var(--text)">${esc(x.c.emoji)} ${esc(x.c.nombre)}</span><span class="num">${fmt(x.t)}${x.c.tope ? ' de ' + fmt(x.c.tope) + (x.t > x.c.tope ? ' ⚠' : '') : gas ? ' · ' + Math.round(x.t / gas * 100) + '%' : ''}</span></div>
+      <div class="bar ${x.c.tope && x.t > x.c.tope ? 'over' : ''}"><div style="width:${Math.min(100, x.t / (x.c.tope || max) * 100)}%"></div></div>`).join('') + '<div class="hint">El tope de cada categoría se pone en Ajustes → Categorías.</div></div>';
+  }
+
+  // Evolución: columnas apiladas de los últimos 6 meses (fijos y cuotas + día a día).
+  const meses = Array.from({ length: 6 }, (_, i) => addYm(ym, i - 5)).map(m => ({ m, f: totalComps(m), d: totalGastos(m) }));
+  const tope = Math.max(...meses.map(x => x.f + x.d));
+  if (tope > 0) {
+    const sel = meses.find(x => x.m === evoSel) || meses[5];
+    html += `<h2><span>Últimos 6 meses</span></h2><div class="card pad">
+      <div class="leyenda"><span><i class="s1"></i>Fijos y cuotas</span><span><i class="s2"></i>Día a día</span></div>
+      <div class="evo" role="img" aria-label="Gasto total por mes, últimos 6 meses">${meses.map(x => `<button data-act="evo" data-id="${x.m}" class="${x.m === sel.m ? 'on' : ''}" aria-label="${mesNombre(x.m)}: ${fmt(x.f + x.d)}">
+        <span class="col">${x.d ? `<i class="s2" style="height:${x.d / tope * 100}%"></i>` : ''}${x.f ? `<i class="s1" style="height:${x.f / tope * 100}%"></i>` : ''}</span><span class="ml">${mesNombre(x.m).slice(0, 3)}</span></button>`).join('')}</div>
+      <div class="kv"><span style="text-transform:capitalize">${mesNombre(sel.m)} ${sel.m.slice(0, 4)}</span><span class="num"><b>${fmt(sel.f + sel.d)}</b></span></div>
+      <div class="kv"><span>Fijos y cuotas</span><span class="num">${fmt(sel.f)}</span></div>
+      <div class="kv"><span>Día a día</span><span class="num">${fmt(sel.d)}</span></div>
+      <div class="hint">Tocá una columna para ver ese mes.</div></div>`;
   }
 
   return html;
@@ -584,6 +636,7 @@ function formCat(c) {
     fields: [
       { name: 'nombre', type: 'text', label: 'Nombre', value: c?.nombre },
       { name: 'emoji', type: 'text', label: 'Emoji', value: c?.emoji || '📦' },
+      { name: 'tope', type: 'pesos', label: 'Tope mensual para esta categoría (opcional)', value: c?.tope || 0 },
     ],
     onSave: v => {
       if (!v.nombre) return 'Ponele un nombre';
@@ -676,32 +729,62 @@ function motorOcr() {
   })().catch(e => { ocr = null; throw e; });
 }
 const MES_NUM = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
-// Devuelve { monto, fecha } con lo que se pudo leer de la imagen.
-async function leerComprobante(blob) {
-  const bmp = await createImageBitmap(blob), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
-  const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  const { data } = await (await motorOcr()).recognize(c, {}, { blocks: true });
+// Saca monto y fecha de las líneas leídas ({ t: texto, h: alto de letra }).
+function interpretar(lineas) {
   // El importe del comprobante es el "$ ..." escrito más grande.
   let mejor = null;
-  for (const b of data.blocks || []) for (const p of b.paragraphs) for (const l of p.lines) {
-    const m = l.text.match(/\$\s?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?/);
+  for (const l of lineas) {
+    const m = l.t.match(/\$\s?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?/);
     if (!m) continue;
-    const h = l.bbox.y1 - l.bbox.y0, monto = soloNum(m[1]);
-    if (monto && (!mejor || h > mejor.h)) mejor = { h, monto };
+    const monto = soloNum(m[1]);
+    if (monto && (!mejor || l.h > mejor.h)) mejor = { h: l.h, monto };
   }
   let fecha = '';
-  const f = data.text.toLowerCase().match(/\b(\d{1,2})\s*(?:\/|-|de)\s*(\d{1,2}|[a-z]{3,10})\s*(?:\/|-|de)\s*(\d{4})\b/);
+  const f = lineas.map(l => l.t).join('\n').toLowerCase().match(/\b(\d{1,2})\s*(?:\/|-|de)\s*(\d{1,2}|[a-z]{3,10})\s*(?:\/|-|de)\s*(\d{4})\b/);
   if (f) {
     const mes = Number(f[2]) || MES_NUM[f[2].slice(0, 3)], iso = `${f[3]}-${pad(mes)}-${pad(f[1])}`;
     if (mes >= 1 && mes <= 12 && Number(f[1]) <= 31 && iso <= hoy()) fecha = iso;
   }
   return { monto: mejor?.monto || 0, fecha };
 }
+async function leerLienzo(c) {
+  const { data } = await (await motorOcr()).recognize(c, {}, { blocks: true });
+  const lineas = [];
+  for (const b of data.blocks || []) for (const p of b.paragraphs) for (const l of p.lines) lineas.push({ t: l.text, h: l.bbox.y1 - l.bbox.y0 });
+  return interpretar(lineas);
+}
+async function leerImagen(blob) {
+  const bmp = await createImageBitmap(blob), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return leerLienzo(c);
+}
+// PDF: usa el texto que trae adentro; si es una imagen escaneada, la dibuja y la lee como foto.
+async function leerPdf(blob) {
+  const pdfjs = await import('./ocr/pdf.min.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = 'ocr/pdf.worker.min.mjs';
+  const doc = await pdfjs.getDocument({ data: await blob.arrayBuffer() }).promise;
+  const pag = await doc.getPage(1);
+  const filas = new Map();
+  for (const it of (await pag.getTextContent()).items) {
+    if (!it.str?.trim()) continue;
+    const y = Math.round(it.transform[5] / 3);
+    if (!filas.has(y)) filas.set(y, []);
+    filas.get(y).push(it);
+  }
+  const lineas = [...filas.values()].map(f => ({ t: f.sort((a, b) => a.transform[4] - b.transform[4]).map(i => i.str).join(' '), h: Math.max(...f.map(i => Math.hypot(i.transform[2], i.transform[3]))) }));
+  const r = interpretar(lineas);
+  if (r.monto) return r;
+  const vp = pag.getViewport({ scale: 2 }), c = document.createElement('canvas');
+  c.width = vp.width; c.height = vp.height;
+  await pag.render({ canvasContext: c.getContext('2d'), viewport: vp, canvas: c }).promise;
+  return leerLienzo(c);
+}
+const leerComprobante = blob => blob.type === 'application/pdf' ? leerPdf(blob) : leerImagen(blob);
 // Lee el comprobante y completa el formulario abierto, sin pisar lo que ya se escribió.
 async function autocompletar(blob) {
-  if (!blob?.type.startsWith('image/')) return;
+  if (!blob || !(blob.type.startsWith('image/') || blob.type === 'application/pdf')) return;
   const mia = hoja, campo = () => $('#form [name=monto]');
   if (!campo() || soloNum(campo().value)) return;
   toast('Leyendo el comprobante…');
@@ -725,7 +808,7 @@ async function levantarCompartido() {
     await c.delete('compartido-texto'); await c.delete('compartido-archivo');
     const m = texto.match(/\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
     await formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
-    if (!m && img) { if (img.type.startsWith('image/')) autocompletar(img); else toast('Comprobante adjunto: completá el monto'); }
+    if (!m && img) autocompletar(img);
   } catch { formGasto(); }
 }
 
@@ -746,6 +829,14 @@ const acciones = {
   'editar-comp': id => formComp(S.compromisos.find(c => c.id === id), false),
   'nuevo-ing': () => formComp(null, true),
   'editar-ing': id => formComp(S.ingresos.find(c => c.id === id), true),
+  'pagar-cuenta': id => {
+    const p = S.pagos[ym] ??= {}, its = compsMes(ym).filter(x => x.c.cuentaId === id), todo = its.every(x => p[x.c.id]);
+    for (const x of its) { if (todo) delete p[x.c.id]; else p[x.c.id] = true; }
+    guardar();
+  },
+  'ir-mensual': () => { tab = 'mensual'; },
+  'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
+  'evo': m => { evoSel = m; },
   'pagar': id => { const p = S.pagos[ym] ??= {}; if (p[id]) delete p[id]; else p[id] = true; guardar(); },
   'nueva-cuenta': () => formCuenta(),
   'editar-cuenta': id => formCuenta(S.cuentas.find(c => c.id === id)),
@@ -785,6 +876,7 @@ document.addEventListener('submit', async e => {
   await guardar(); cerrar(); render();
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'q') { filtro.q = e.target.value; $('#res').innerHTML = resultados(); return; }
   if (e.target.closest('.f.money') || e.target.dataset.miles != null) e.target.value = miles(soloNum(e.target.value));
 });
 document.addEventListener('change', async e => {
@@ -792,6 +884,7 @@ document.addEventListener('change', async e => {
   if (e.target.id === 'adjunto' && e.target.files[0] && hoja?.setImg) {
     const b = await achicar(e.target.files[0]); hoja.setImg(b); mostrarThumb(b); autocompletar(b); return;
   }
+  if (e.target.id === 'f-cat' || e.target.id === 'f-cta') { filtro[e.target.id.slice(2)] = e.target.value; $('#res').innerHTML = resultados(); return; }
   if (hoja && e.target.closest('#form')) visibilidad();
 });
 
@@ -802,7 +895,7 @@ document.addEventListener('change', async e => {
   navigator.storage?.persist?.();
   actualizarDolar();
   // Baja en segundo plano lo necesario para leer comprobantes, así después funciona sin conexión.
-  setTimeout(() => { if (navigator.onLine) for (const f of ['tesseract.min.js', 'worker.min.js', 'spa.traineddata.gz', 'tesseract-core-relaxedsimd-lstm.wasm.js']) fetch('ocr/' + f).catch(() => {}); }, 6000);
+  setTimeout(() => { if (navigator.onLine) for (const f of ['tesseract.min.js', 'worker.min.js', 'spa.traineddata.gz', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'pdf.min.mjs', 'pdf.worker.min.mjs']) fetch('ocr/' + f).catch(() => {}); }, 6000);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   const p = new URLSearchParams(location.search);
   if (p.has('compartido')) { history.replaceState(null, '', './'); levantarCompartido(); }
