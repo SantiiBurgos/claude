@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gastos</title>
+<meta name="theme-color" content="#0f1110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f2ec" media="(prefers-color-scheme: light)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <button class="nav-btn" data-act="mes-prev" aria-label="Mes anterior">‹</button>
+  <button class="mes" data-act="mes-hoy" id="mes-label"></button>
+  <button class="nav-btn" data-act="mes-next" aria-label="Mes siguiente">›</button>
+</header>
+<main id="view"></main>
+<button class="fab" data-act="nuevo-gasto" aria-label="Agregar gasto">+</button>
+<nav class="tabs" id="tabs">
+  <button data-tab="inicio"><i>◐</i>Inicio</button>
+  <button data-tab="mensual"><i>▤</i>Mensual</button>
+  <button data-tab="resumen"><i>◔</i>Resumen</button>
+  <button data-tab="ajustes"><i>⚙</i>Ajustes</button>
+</nav>
+<div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
