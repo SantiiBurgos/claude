@@ -63,6 +63,7 @@ const inicial = () => ({
   ingresos: [],
   pagos: {},       // { 'AAAA-MM': { idCompromiso: true } }
   presupuesto: 0,  // tope mensual para gastos del día a día
+  dolares: {},     // { 'AAAA-MM': cotización } — vale desde ese mes hasta que se cargue otra
 });
 
 let S = inicial();
@@ -71,6 +72,13 @@ let tab = 'inicio';
 const guardar = () => db.set('estado', S).catch(() => toast('No se pudo guardar'));
 
 /* ---------- cálculos ---------- */
+// Cotización del dólar que rige en un mes: la última cargada hasta ese mes.
+function dolarMes(m) {
+  const ks = Object.keys(S.dolares || {}).sort();
+  if (!ks.length) return 0;
+  return S.dolares[ks.filter(k => k <= m).pop() || ks[0]];
+}
+const fmtUsd = n => 'US$ ' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 // Devuelve cómo aparece un compromiso en un mes dado, o null si no corresponde.
 function enMes(c, m) {
   const d = ymIdx(m) - ymIdx(c.inicio);
@@ -78,7 +86,7 @@ function enMes(c, m) {
   if (c.tipo === 'unico' && d !== 0) return null;
   if (c.tipo === 'cuotas' && d >= c.total) return null;
   if (c.tipo === 'mensual' && c.fin && m > c.fin) return null;
-  const monto = c.ajuste ? Math.round(c.monto * Math.pow(1 + c.ajuste / 100, ymIdx(m) - ymIdx(c.base || c.inicio))) : c.monto;
+  const monto = c.usd ? Math.round(c.usd * dolarMes(m)) : c.ajuste ? Math.round(c.monto * Math.pow(1 + c.ajuste / 100, ymIdx(m) - ymIdx(c.base || c.inicio))) : c.monto;
   const etiqueta = c.tipo === 'cuotas' ? `${d + 1}/${c.total}` : c.tipo === 'mensual' ? 'Fijo' : '1 pago';
   return { c, monto, etiqueta, ultima: c.tipo === 'cuotas' && d + 1 === c.total };
 }
@@ -190,7 +198,7 @@ function vMensual() {
       const ok = !!pagos[x.c.id];
       html += `<div class="row ${ok ? 'done' : ''}">
         <button class="check ${ok ? 'on' : ''}" data-act="pagar" data-id="${x.c.id}" aria-label="Marcar pagado">✓</button>
-        <button class="grow" data-act="editar-comp" data-id="${x.c.id}" style="text-align:left"><div class="t" style="white-space:normal">${esc(x.c.nombre)}</div></button>
+        <button class="grow" data-act="editar-comp" data-id="${x.c.id}" style="text-align:left"><div class="t" style="white-space:normal">${esc(x.c.nombre)}</div>${x.c.usd ? `<div class="s">${fmtUsd(x.c.usd)} a ${fmt(dolarMes(ym))}</div>` : ''}</button>
         <span class="badge ${x.ultima ? 'last' : ''}">${x.etiqueta}</span>
         <span class="amt num">${fmt(x.monto)}</span></div>`;
     }
@@ -239,6 +247,9 @@ function vResumen() {
 function vAjustes() {
   return `<h2><span>Tope mensual del día a día</span></h2>
     <div class="card"><button class="row" data-act="editar-presu"><span class="grow">Tope</span><span class="amt num">${S.presupuesto ? fmt(S.presupuesto) : 'Sin tope'}</span></button></div>
+    <h2><span>Dólar de referencia</span></h2>
+    <div class="card"><button class="row" data-act="editar-dolar"><span class="grow">Valor en ${mesNombre(ym)}</span><span class="amt num">${dolarMes(ym) ? fmt(dolarMes(ym)) : 'Sin cargar'}</span></button></div>
+    <div class="hint">Se usa para pasar a pesos lo que cargues en dólares (suscripciones). Poné el valor que te termina cobrando la tarjeta, con impuestos.</div>
     <h2><span>Tarjetas y medios de pago</span></h2><div class="card">
     ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}"><span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
     <button class="row" data-act="nueva-cuenta"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
@@ -266,7 +277,7 @@ function abrir(cfg) {
     const lab = f.label ? `<span class="lab">${esc(f.label)}</span>` : '';
     if (f.type === 'money') return `<div class="f money" data-f="${f.name}"><span>$</span><input name="${f.name}" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(f.value)}" aria-label="${esc(f.label || 'Monto')}"></div>`;
     if (f.type === 'chips') return `<div class="f" data-f="${f.name}">${lab}<div class="chips">${f.options.map(o => `<label class="chip"><input type="radio" name="${f.name}" value="${esc(o.v)}" ${String(o.v) === String(f.value) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div></div>`;
-    return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="${f.type}" value="${esc(f.value ?? '')}" ${f.type === 'number' ? 'inputmode="decimal" step="any"' : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="off"></div>`;
+    return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="${f.type === 'number' ? 'text' : f.type}" value="${esc(String(f.value ?? '').replace('.', f.type === 'number' ? ',' : '.'))}" ${f.type === 'number' ? 'inputmode="decimal"' : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="off"></div>`;
   };
   $('#sheet').innerHTML = `<form id="form" novalidate>
     <div class="sheet-head"><h3>${esc(cfg.title)}</h3><button type="button" data-act="cerrar" aria-label="Cerrar">✕</button></div>
@@ -393,13 +404,18 @@ async function formComp(c, esIngreso) {
       { name: 'tipo', type: 'chips', label: 'Se repite', value: c?.tipo || (esIngreso ? 'mensual' : 'cuotas'), options: tipos },
       { name: 'n', type: 'number', label: `Cuota que toca en ${mesNombre(ym)}`, value: nAct, showIf: v => v.tipo === 'cuotas' },
       { name: 'total', type: 'number', label: 'Cantidad total de cuotas', value: c?.total || 3, showIf: v => v.tipo === 'cuotas' },
+      ...(esIngreso ? [] : [{ name: 'usd', type: 'number', label: 'Precio en dólares (opcional: reemplaza el monto en pesos)', value: c?.usd || '', placeholder: 'Ej: 9,99' }]),
       ...(esIngreso ? [] : [{ name: 'ajuste', type: 'number', label: 'Aumento estimado por mes, en % (opcional, ej. préstamo UVA)', value: c?.ajuste || '', showIf: v => v.tipo !== 'unico' }]),
     ],
     onSave: v => {
+      if (v.usd > 0) {
+        if (!dolarMes(ym)) return 'Cargá primero el dólar de referencia en Ajustes';
+        v.monto = Math.round(v.usd * dolarMes(ym)); v.ajuste = 0;
+      }
       if (!v.monto) return 'Poné un monto';
       if (!v.nombre) return 'Ponele un nombre';
       const total = Math.max(1, Math.round(v.total)), n = Math.min(total, Math.max(1, Math.round(v.n)));
-      const base = { nombre: v.nombre, monto: v.monto, tipo: v.tipo, ...(esIngreso ? {} : { cuentaId: v.cuentaId }) };
+      const base = { nombre: v.nombre, monto: v.monto, tipo: v.tipo, ...(esIngreso ? {} : { cuentaId: v.cuentaId, usd: v.usd > 0 ? v.usd : 0 }) };
       if (v.ajuste) { base.ajuste = v.ajuste; base.base = ym; } else { base.ajuste = 0; }
       if (v.tipo === 'cuotas') { base.total = total; base.inicio = addYm(ym, -(n - 1)); }
       if (!ed) { S[lista].push({ id: uid(), inicio: ym, total: 1, ...base }); return; }
@@ -461,6 +477,16 @@ function formCat(c) {
       S.gastos.forEach(g => { if (g.cat === c.id) g.cat = otra; });
       S.categorias = S.categorias.filter(x => x.id !== c.id);
     } : null,
+  });
+}
+function formDolar() {
+  abrir({
+    title: `Dólar desde ${mesNombre(ym)}`,
+    fields: [{ name: 'dolar', type: 'money', value: dolarMes(ym) }],
+    onSave: v => {
+      if (!v.dolar) return 'Poné un valor';
+      (S.dolares ??= {})[ym] = v.dolar; // los meses anteriores conservan su cotización
+    },
   });
 }
 function formPresu() {
@@ -597,6 +623,7 @@ const acciones = {
   'nueva-cat': () => formCat(),
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
+  'editar-dolar': () => formDolar(),
   'exportar': () => respaldar(true),
   'respaldar': () => respaldar(false),
   'repetir': id => { const g = S.gastos.find(x => x.id === id); return formGasto(null, { monto: g.monto, desc: g.desc, cat: g.cat, cuentaId: g.cuentaId }); },
