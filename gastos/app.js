@@ -108,6 +108,19 @@ function render() {
   $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, ajustes: vAjustes })[tab]();
 }
 
+// Gastos que se repiten (mismo detalle, categoría y medio), para cargarlos en un toque.
+function frecuentes() {
+  const m = new Map();
+  for (const g of S.gastos) {
+    if (!g.desc) continue;
+    const k = [g.desc.toLowerCase(), g.cat, g.cuentaId].join('|'), x = m.get(k) || { n: 0, g };
+    x.n++; if (g.fecha >= x.g.fecha) x.g = g;
+    m.set(k, x);
+  }
+  return [...m.values()].filter(x => x.n >= 2).sort((a, b) => b.n - a.n || b.g.fecha.localeCompare(a.g.fecha)).slice(0, 5).map(x => x.g);
+}
+const diasSinRespaldo = () => S.ultimoRespaldo ? Math.round((Date.parse(hoy()) - Date.parse(S.ultimoRespaldo)) / 864e5) : Infinity;
+
 function vInicio() {
   const ing = totalIngresos(ym), comp = totalComps(ym), gas = totalGastos(ym);
   const queda = ing - comp - gas;
@@ -140,11 +153,15 @@ function vInicio() {
       <span class="amt num">${fmt(g.monto)}</span></button>`;
   }
   lista = lista ? lista + '</div>' : `<div class="empty">Todavía no anotaste gastos este mes.<br>Tocá <b>+</b> para cargar el primero.</div>`;
-  return `<section class="hero">
+  const dias = diasSinRespaldo(), hayDatos = S.gastos.length + S.compromisos.length + S.ingresos.length > 0;
+  const aviso = hayDatos && dias >= 30 ? `<div class="card pad aviso"><p>${dias === Infinity ? 'Todavía no guardaste ningún respaldo.' : `Hace ${dias} días que no guardás un respaldo.`} Tus datos viven solo en este teléfono.</p><button class="btn" data-act="respaldar">Guardar respaldo ahora</button></div>` : '';
+  const frec = frecuentes();
+  const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
+  return `${aviso}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}</div>
-    </section>${presu}${lista}`;
+    </section>${rep}${presu}${lista}`;
 }
 
 function etiquetaDia(f) {
@@ -230,10 +247,11 @@ function vAjustes() {
     ${S.categorias.map(c => `<button class="row" data-act="editar-cat" data-id="${c.id}"><span class="emoji">${esc(c.emoji)}</span><span class="grow t">${esc(c.nombre)}</span></button>`).join('')}
     <button class="row" data-act="nueva-cat"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
     <h2><span>Tus datos</span></h2>
-    <div class="hint">Todo queda guardado solo en este teléfono. Hacé un respaldo cada tanto.</div>
+    <div class="hint">Todo queda guardado solo en este teléfono. Último respaldo: <b>${S.ultimoRespaldo ? new Date(S.ultimoRespaldo + 'T12:00').toLocaleDateString('es-AR') : 'nunca'}</b>. El respaldo no incluye las fotos de los comprobantes.</div>
     <div class="btns">
-      <button class="btn ghost" data-act="exportar">Guardar respaldo (JSON)</button>
-      <label class="btn ghost">Cargar respaldo<input type="file" id="importar" accept="application/json,.json" hidden></label>
+      <button class="btn" data-act="respaldar">Guardar respaldo (Drive, WhatsApp, mail…)</button>
+      <button class="btn ghost" data-act="exportar">Descargar respaldo al teléfono</button>
+      <label class="btn ghost">Cargar respaldo<input type="file" id="importar" accept="application/json,text/plain,.json,.txt" hidden></label>
       <button class="btn ghost" data-act="csv">Exportar gastos a planilla (CSV)</button>
       <button class="btn danger" data-act="borrar-todo">Borrar todo</button>
     </div>`;
@@ -259,7 +277,7 @@ function abrir(cfg) {
   visibilidad();
   if (cfg.imagen) mostrarThumb(cfg.imagen);
   const primero = $('#sheet input[type=text]');
-  if (primero && cfg.foco !== false) setTimeout(() => primero.focus(), 60);
+  if (primero && cfg.foco !== false) setTimeout(() => { primero.focus(); primero.select(); }, 60);
 }
 function cerrar() { $('#overlay').hidden = true; $('#sheet').innerHTML = ''; hoja = null; }
 function valores() {
@@ -297,26 +315,34 @@ const esCredito = id => cuenta(id).tipo === 'credito';
 
 async function formGasto(g, extra = {}) {
   const ed = !!g;
-  g = g || { monto: extra.monto || 0, cat: S.categorias[0]?.id, cuentaId: S.ultimaCuenta && S.cuentas.some(c => c.id === S.ultimaCuenta) ? S.ultimaCuenta : S.cuentas[0]?.id, desc: extra.desc || '', fecha: hoy() };
+  g = g || { monto: extra.monto || 0, cat: extra.cat || S.categorias[0]?.id, cuentaId: extra.cuentaId || (S.ultimaCuenta && S.cuentas.some(c => c.id === S.ultimaCuenta) ? S.ultimaCuenta : S.cuentas[0]?.id), desc: extra.desc || '', fecha: hoy() };
   let img = extra.img || (ed && g.img ? await db.get('img:' + g.id).catch(() => null) : null);
   abrir({
     title: ed ? 'Editar gasto' : 'Nuevo gasto', adjunto: true, imagen: img,
     fields: [
       { name: 'monto', type: 'money', value: g.monto },
-      { name: 'cat', type: 'chips', label: 'Categoría', value: g.cat, options: S.categorias.map(c => ({ v: c.id, l: `${c.emoji} ${c.nombre}` })) },
-      { name: 'cuentaId', type: 'chips', label: 'Pagué con', value: g.cuentaId, options: opCuentas() },
-      { name: 'cuotas', type: 'chips', label: 'Cuotas', value: 1, options: [1, 2, 3, 6, 9, 12, 18, 24].map(n => ({ v: n, l: n === 1 ? '1 pago' : String(n) })), showIf: v => !ed && esCredito(v.cuentaId) },
-      { name: 'primer', type: 'chips', label: 'Primer pago', value: 1, options: [{ v: 1, l: `En ${mesNombre(addYm(hoy().slice(0, 7), 1))}` }, { v: 0, l: `En ${mesNombre(hoy().slice(0, 7))}` }], showIf: v => !ed && esCredito(v.cuentaId) },
+      ...(ed ? [] : [{ name: 'clase', type: 'chips', value: 'gasto', options: [{ v: 'gasto', l: 'Gasté' }, { v: 'ingreso', l: 'Me entró plata' }] }]),
+      { name: 'cat', type: 'chips', label: 'Categoría', value: g.cat, options: S.categorias.map(c => ({ v: c.id, l: `${c.emoji} ${c.nombre}` })), showIf: v => v.clase !== 'ingreso' },
+      { name: 'cuentaId', type: 'chips', label: 'Pagué con', value: g.cuentaId, options: opCuentas(), showIf: v => v.clase !== 'ingreso' },
+      { name: 'cuotas', type: 'chips', label: 'Cuotas', value: 1, options: [1, 2, 3, 6, 9, 12, 18, 24].map(n => ({ v: n, l: n === 1 ? '1 pago' : String(n) })), showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
+      { name: 'primer', type: 'chips', label: 'Primer pago', value: 1, options: [{ v: 1, l: `En ${mesNombre(addYm(hoy().slice(0, 7), 1))}` }, { v: 0, l: `En ${mesNombre(hoy().slice(0, 7))}` }], showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
       { name: 'desc', type: 'text', label: 'Detalle (opcional)', value: g.desc, placeholder: 'Ej: almuerzo, nafta…' },
       { name: 'fecha', type: 'date', label: 'Fecha', value: g.fecha },
     ],
     setImg: b => { img = b; },
     onSave: async v => {
       if (!v.monto) return 'Poné un monto';
-      if (!v.cuentaId) return 'Elegí con qué pagaste';
-      S.ultimaCuenta = v.cuentaId;
       const id = ed ? g.id : uid();
       if (img) await db.set('img:' + id, img);
+      if (v.clase === 'ingreso') {
+        // Plata que entró (ej. una transferencia recibida): va a los ingresos de ese mes.
+        const mes = (v.fecha || hoy()).slice(0, 7);
+        S.ingresos.push({ id, nombre: v.desc || 'Ingreso', monto: v.monto, tipo: 'unico', inicio: mes, total: 1, fecha: v.fecha, img: !!img });
+        toast(`Ingreso de ${fmt(v.monto)} anotado en ${mesNombre(mes)}`);
+        return;
+      }
+      if (!v.cuentaId) return 'Elegí con qué pagaste';
+      S.ultimaCuenta = v.cuentaId;
       if (!ed && esCredito(v.cuentaId)) {
         // Compra con crédito: pasa a la pestaña Mensual, repartida en cuotas.
         const n = Number(v.cuotas) || 1, inicio = addYm((v.fecha || hoy()).slice(0, 7), Number(v.primer));
@@ -430,6 +456,19 @@ function descargar(nombre, texto, tipo) {
   a.download = nombre; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
+async function respaldar(soloDescargar) {
+  const texto = JSON.stringify(S, null, 1), n = `gastos-respaldo-${hoy()}`;
+  const listo = () => { S.ultimoRespaldo = hoy(); guardar(); toast('Respaldo guardado'); };
+  if (!soloDescargar) {
+    // En Android abre el menú Compartir para mandarlo a Drive, WhatsApp, mail, etc.
+    for (const f of [new File([texto], n + '.json', { type: 'application/json' }), new File([texto], n + '.txt', { type: 'text/plain' })]) {
+      if (!navigator.canShare?.({ files: [f] })) continue;
+      try { await navigator.share({ files: [f], title: 'Respaldo de Gastos' }); listo(); return; }
+      catch (e) { if (e.name === 'AbortError') return; break; }
+    }
+  }
+  descargar(n + '.json', texto, 'application/json'); listo();
+}
 function exportarCsv() {
   const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
   const filas = [['Fecha', 'Tipo', 'Detalle', 'Categoría', 'Medio', 'Cuota', 'Monto']];
@@ -443,7 +482,7 @@ async function importar(file) {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.cuentas) || !Array.isArray(d.compromisos) || !Array.isArray(d.gastos)) throw 0;
     if (!confirm('Esto reemplaza todo lo que hay cargado en la app por el contenido del respaldo. ¿Seguimos?')) return;
-    S = { ...inicial(), ...d };
+    S = { ...inicial(), ...d, ultimoRespaldo: hoy() };
     await guardar(); render(); toast('Respaldo cargado');
   } catch { toast('Ese archivo no es un respaldo válido'); }
 }
@@ -536,7 +575,9 @@ const acciones = {
   'nueva-cat': () => formCat(),
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
-  'exportar': () => descargar(`gastos-respaldo-${hoy()}.json`, JSON.stringify(S, null, 1), 'application/json'),
+  'exportar': () => respaldar(true),
+  'respaldar': () => respaldar(false),
+  'repetir': id => { const g = S.gastos.find(x => x.id === id); return formGasto(null, { monto: g.monto, desc: g.desc, cat: g.cat, cuentaId: g.cuentaId }); },
   'csv': exportarCsv,
   'borrar-todo': () => { if (confirm('¿Borrar TODOS los datos de la app? No se puede deshacer.')) { S = inicial(); guardar(); } },
   'cerrar': cerrar,
