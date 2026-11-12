@@ -63,6 +63,8 @@ const inicial = () => ({
   ingresos: [],
   pagos: {},       // { 'AAAA-MM': { idCompromiso: true } }
   presupuesto: 0,  // tope mensual para gastos del día a día
+  meta: null,      // { nombre, total, minimo }
+  ahorros: {},     // { 'AAAA-MM': lo que se guardó de verdad ese mes }
   dolares: {},     // { 'AAAA-MM': cotización } — vale desde ese mes hasta que se cargue otra
 });
 
@@ -127,7 +129,7 @@ function render() {
   const actual = ym === hoy().slice(0, 7);
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
   for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === tab);
-  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, ajustes: vAjustes })[tab]();
+  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes })[tab]();
 }
 
 // Gastos que se repiten (mismo detalle, categoría y medio), para cargarlos en un toque.
@@ -245,6 +247,73 @@ function vResumen() {
       <div class="bar"><div style="width:${x.t / porCat[0].t * 100}%"></div></div>`).join('') + '</div>';
   }
 
+  return html;
+}
+
+/* ---------- plan: meta de ahorro, próximos meses y deudas ---------- */
+// Lo que se proyecta ahorrar en un mes: ingresos menos compromisos y gastos del día a día.
+function ahorroEstimado(m) {
+  const variables = m === hoy().slice(0, 7) ? Math.max(S.presupuesto, totalGastos(m)) : S.presupuesto;
+  return totalIngresos(m) - totalComps(m) - variables;
+}
+const ahorroReal = m => (S.ahorros || {})[m];
+// Ahorrado de verdad hasta el mes m inclusive.
+const ahorradoHasta = m => sum(Object.keys(S.ahorros || {}).filter(k => k <= m), k => S.ahorros[k]);
+// Primer mes en que el acumulado (real + estimado a futuro) alcanza un objetivo.
+function mesQueLlega(objetivo) {
+  const act = hoy().slice(0, 7);
+  let acum = ahorradoHasta(addYm(act, -1));
+  for (let i = 0; i < 60; i++) {
+    const m = addYm(act, i);
+    acum += ahorroReal(m) ?? ahorroEstimado(m);
+    if (acum >= objetivo) return m;
+  }
+  return null;
+}
+function deudas(m) {
+  return S.compromisos.filter(c => c.tipo === 'cuotas' && ymIdx(c.inicio) + c.total > ymIdx(m)).map(c => {
+    const desde = Math.max(ymIdx(m), ymIdx(c.inicio)), fin = ymIdx(c.inicio) + c.total - 1;
+    let saldo = 0;
+    for (let i = desde; i <= fin; i++) saldo += enMes(c, idxYm(i)).monto;
+    return { c, restantes: fin - desde + 1, saldo, cuota: enMes(c, idxYm(desde)).monto, termina: idxYm(fin) };
+  }).sort((a, b) => b.saldo - a.saldo);
+}
+
+function vPlan() {
+  const act = hoy().slice(0, 7), M = S.meta;
+  let html = '';
+  if (!M) {
+    html += `<div class="empty">Definí una meta de ahorro (por ejemplo, la mudanza) y la app te muestra cuánto llevás y cuándo llegás.</div>
+      <button class="btn line" data-act="editar-meta">+ Crear meta de ahorro</button>`;
+  } else {
+    const llevo = ahorradoHasta('9999-12'), pct = Math.min(100, llevo / M.total * 100);
+    const mMin = M.minimo ? mesQueLlega(M.minimo) : null, mTot = mesQueLlega(M.total);
+    const estado = llevo >= M.total ? 'Meta completa' : M.minimo && llevo >= M.minimo ? 'Ya llegaste al mínimo' : 'Ahorrando';
+    const cuando = m => m ? mesCorto(m) : 'más de 5 años';
+    html += `<section class="hero">
+        <div class="lbl">${esc(M.nombre)} · ${estado}</div>
+        <div class="big num">${fmt(llevo)}</div>
+        <div class="sub">de ${fmt(M.total)} · ${Math.round(llevo / M.total * 100)}%</div>
+      </section>
+      <div class="card pad">
+        <div class="bar meta"><div style="width:${pct}%"></div>${M.minimo && M.minimo < M.total ? `<i style="left:${M.minimo / M.total * 100}%"></i>` : ''}</div>
+        ${M.minimo ? `<div class="kv"><span>Mínimo de ${fmt(M.minimo)}</span><span class="num">${llevo >= M.minimo ? 'alcanzado' : 'llegás en ' + cuando(mMin)}</span></div>` : ''}
+        <div class="kv"><span>Meta total</span><span class="num">${llevo >= M.total ? 'alcanzada' : 'llegás en ' + cuando(mTot)}</span></div>
+        <div class="hint">La fecha sale de lo que ya guardaste más lo que se estima que te queda cada mes.</div>
+        <button class="btn ghost" data-act="editar-meta">Editar meta</button>
+      </div>
+      <h2><span>Ahorro mes a mes</span></h2><div class="card pad"><table><tr><th>Mes</th><th>Estimado</th><th>Guardado</th><th>Acumulado</th></tr>`;
+    let acum = ahorradoHasta(addYm(ym, -1));
+    for (let i = 0; i < 6; i++) {
+      const m = addYm(ym, i), est = ahorroEstimado(m), real = ahorroReal(m), futuro = m >= act;
+      acum += real ?? (futuro ? est : 0);
+      html += `<tr><td>${mesCorto(m)}</td><td class="num ${est < 0 ? 'neg' : ''}">${fmt(est)}</td>
+        <td class="num"><button class="celda" data-act="editar-ahorro" data-id="${m}">${real == null ? 'Anotar' : fmt(real)}</button></td>
+        <td class="num ${real == null && futuro ? 'est' : ''}"><b>${fmt(acum)}</b></td></tr>`;
+    }
+    html += `</table><div class="hint">Tocá "Guardado" para anotar lo que apartaste de verdad ese mes. El acumulado en gris usa el estimado.</div></div>`;
+  }
+
   html += `<h2><span>Próximos meses</span></h2><div class="card pad"><table><tr><th>Mes</th><th>Ingresos</th><th>A pagar</th><th>Queda</th></tr>`;
   for (let i = 0; i < 6; i++) {
     const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = a - b - S.presupuesto;
@@ -252,10 +321,44 @@ function vResumen() {
   }
   html += `</table><div class="hint">"Queda" descuenta también el tope de gastos del día a día${S.presupuesto ? ` (${fmt(S.presupuesto)})` : ''}.</div></div>`;
 
-  html += `<h2><span>Deuda en cuotas</span></h2><div class="card">
-    <div class="row"><span class="grow">Falta pagar desde ${mesNombre(ym)}</span><span class="amt num">${fmt(deudaDesde(ym))}</span></div>
-    <div class="row"><span class="grow">Va a faltar desde ${mesNombre(addYm(ym, 1))}</span><span class="amt num">${fmt(deudaDesde(addYm(ym, 1)))}</span></div></div>`;
+
+  const ds = deudas(ym);
+  html += `<h2><span>Deudas en cuotas</span><span class="num">${fmt(sum(ds, d => d.saldo))}</span></h2>`;
+  if (ds.length) {
+    html += `<div class="card">` + ds.map(d => `<button class="row" data-act="editar-comp" data-id="${d.c.id}">
+      <span class="grow"><div class="t">${esc(d.c.nombre)}</div><div class="s" style="white-space:normal">${d.restantes === 1 ? 'Última cuota' : d.restantes + ' cuotas de ' + fmt(d.cuota)} · termina ${mesCorto(d.termina)} · ${esc(cuenta(d.c.cuentaId).nombre)}</div></span>
+      <span class="amt num">${fmt(d.saldo)}</span></button>`).join('') + `</div>
+      <div class="hint">Saldo que falta pagar contando desde ${mesNombre(ym)}. Dentro de un mes va a ser ${fmt(sum(deudas(addYm(ym, 1)), d => d.saldo))}.</div>`;
+  } else html += `<div class="empty">No tenés cuotas pendientes.</div>`;
   return html;
+}
+
+function formMeta() {
+  const M = S.meta;
+  abrir({
+    title: M ? 'Editar meta' : 'Nueva meta de ahorro',
+    fields: [
+      { name: 'total', type: 'money', value: M?.total, label: 'Meta total' },
+      { name: 'nombre', type: 'text', label: 'Para qué es', value: M?.nombre, placeholder: 'Ej: mudanza' },
+      { name: 'minimo', type: 'pesos', label: 'Mínimo para arrancar (opcional)', value: M?.minimo || 0, placeholder: 'Ej: 2.675.000' },
+    ],
+    onSave: v => {
+      if (!v.total) return 'Poné el monto de la meta';
+      S.meta = { nombre: v.nombre || 'Meta de ahorro', total: v.total, minimo: Math.min(Math.round(v.minimo) || 0, v.total) };
+    },
+    deleteLabel: 'Eliminar meta',
+    onDelete: M ? () => { S.meta = null; } : null,
+  });
+}
+function formAhorro(m) {
+  const tiene = ahorroReal(m) != null;
+  abrir({
+    title: `Guardado en ${mesNombre(m)}`,
+    fields: [{ name: 'monto', type: 'money', value: ahorroReal(m) || 0 }],
+    onSave: v => { (S.ahorros ??= {})[m] = v.monto; },
+    deleteLabel: 'Quitar lo anotado',
+    onDelete: tiene ? () => { delete S.ahorros[m]; } : null,
+  });
 }
 
 function vAjustes() {
@@ -290,6 +393,7 @@ function abrir(cfg) {
     if (f.type === 'nota') return `<div class="f hint" data-f="${f.name}"></div>`;
     const lab = f.label ? `<span class="lab">${esc(f.label)}</span>` : '';
     if (f.type === 'money') return `<div class="f money" data-f="${f.name}"><span>$</span><input name="${f.name}" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(f.value)}" aria-label="${esc(f.label || 'Monto')}"></div>`;
+    if (f.type === 'pesos') return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="text" inputmode="numeric" data-miles autocomplete="off" placeholder="${esc(f.placeholder || '')}" value="${miles(f.value)}"></div>`;
     if (f.type === 'chips') return `<div class="f" data-f="${f.name}">${lab}<div class="chips">${f.options.map(o => `<label class="chip"><input type="radio" name="${f.name}" value="${esc(o.v)}" ${String(o.v) === String(f.value) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div></div>`;
     return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="${f.type === 'number' ? 'text' : f.type}" value="${esc(String(f.value ?? '').replace('.', f.type === 'number' ? ',' : '.'))}" ${f.type === 'number' ? 'inputmode="decimal"' : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="off"></div>`;
   };
@@ -311,7 +415,7 @@ function valores() {
   for (const f of hoja.fields) {
     if (f.type === 'nota') continue;
     if (f.type === 'chips') v[f.name] = $(`#form input[name="${f.name}"]:checked`)?.value ?? '';
-    else if (f.type === 'money') v[f.name] = soloNum($(`#form [name="${f.name}"]`).value);
+    else if (f.type === 'money' || f.type === 'pesos') v[f.name] = soloNum($(`#form [name="${f.name}"]`).value);
     else if (f.type === 'number') v[f.name] = Number($(`#form [name="${f.name}"]`).value.replace(',', '.')) || 0;
     else v[f.name] = $(`#form [name="${f.name}"]`).value.trim();
   }
@@ -649,6 +753,8 @@ const acciones = {
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
   'editar-dolar': () => formDolar(),
+  'editar-meta': () => formMeta(),
+  'editar-ahorro': m => formAhorro(m),
   'exportar': () => respaldar(true),
   'respaldar': () => respaldar(false),
   'repetir': id => { const g = S.gastos.find(x => x.id === id); return formGasto(null, { monto: g.monto, desc: g.desc, cat: g.cat, cuentaId: g.cuentaId }); },
@@ -679,7 +785,7 @@ document.addEventListener('submit', async e => {
   await guardar(); cerrar(); render();
 });
 document.addEventListener('input', e => {
-  if (e.target.closest('.f.money')) e.target.value = miles(soloNum(e.target.value));
+  if (e.target.closest('.f.money') || e.target.dataset.miles != null) e.target.value = miles(soloNum(e.target.value));
 });
 document.addEventListener('change', async e => {
   if (e.target.id === 'importar' && e.target.files[0]) return importar(e.target.files[0]);
