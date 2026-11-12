@@ -124,7 +124,7 @@ td.neg { color: var(--bad); }
 .chip input:focus-visible + span { outline: 2px solid var(--text); outline-offset: 2px; }
 .thumb { display: block; max-width: 100%; max-height: 240px; border-radius: 14px; margin-top: 8px; }
 .attach { display: inline-block; padding: 10px 14px; border-radius: 99px; border: 1.5px dashed var(--line); color: var(--muted); font-size: 15px; }
-.attach input { display: none; }
+.attach input, .attach[hidden] { display: none; }
 
 .toast {
   position: fixed; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 160px); z-index: 20; margin: 0 auto; max-width: 420px;

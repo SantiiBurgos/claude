@@ -252,7 +252,7 @@ function abrir(cfg) {
   $('#sheet').innerHTML = `<form id="form" novalidate>
     <div class="sheet-head"><h3>${esc(cfg.title)}</h3><button type="button" data-act="cerrar" aria-label="Cerrar">✕</button></div>
     ${cfg.fields.map(campo).join('')}
-    ${cfg.adjunto ? `<div class="f">${cfg.setImg ? '<label class="attach">📎 Adjuntar comprobante<input type="file" id="adjunto" accept="image/*"></label>' : ''}<img class="thumb" id="thumb" hidden alt="Comprobante"></div>` : ''}
+    ${cfg.adjunto ? `<div class="f">${cfg.setImg ? '<label class="attach">📎 Adjuntar comprobante<input type="file" id="adjunto" accept="image/*,application/pdf"></label>' : ''}<img class="thumb" id="thumb" hidden alt="Comprobante"> <a class="attach" id="pdf" hidden target="_blank" rel="noopener">📄 Ver comprobante (PDF)</a></div>` : ''}
     <div class="btns"><button class="btn" type="submit">Guardar</button>
     ${cfg.onDelete ? `<button class="btn danger" type="button" data-act="eliminar">${esc(cfg.deleteLabel || 'Eliminar')}</button>` : ''}</div></form>`;
   $('#overlay').hidden = false;
@@ -277,11 +277,13 @@ function visibilidad() {
   for (const f of hoja.fields) if (f.showIf) $(`#form [data-f="${f.name}"]`).hidden = !f.showIf(v);
 }
 function mostrarThumb(blob) {
-  const t = $('#thumb'); if (!t) return;
-  t.src = URL.createObjectURL(blob); t.hidden = false;
+  const pdf = blob.type === 'application/pdf', t = $(pdf ? '#pdf' : '#thumb'), otro = $(pdf ? '#thumb' : '#pdf');
+  if (!t) return;
+  t[pdf ? 'href' : 'src'] = URL.createObjectURL(blob); t.hidden = false; otro.hidden = true;
 }
 // Achica la foto del comprobante para que no ocupe mucho lugar.
 async function achicar(file) {
+  if (!file.type.startsWith('image/')) return file; // los PDF se guardan tal cual
   const bmp = await createImageBitmap(file);
   const k = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas');
@@ -453,7 +455,7 @@ async function levantarCompartido() {
     const t = await c.match('compartido-texto'), a = await c.match('compartido-archivo');
     const texto = t ? await t.text() : '';
     let img = null;
-    if (a) { const b = await a.blob(); if (b.type.startsWith('image/')) img = await achicar(b); }
+    if (a) { const b = await a.blob(); if (b.type.startsWith('image/') || b.type === 'application/pdf') img = await achicar(b); }
     await c.delete('compartido-texto'); await c.delete('compartido-archivo');
     const m = texto.match(/\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
     formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
