@@ -16,6 +16,9 @@ const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.get
 const soloNum = s => Number(String(s).replace(/\D/g, '')) || 0;
 const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
+// Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
+const NATIVO = window.Android || null;
+const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
 
 /* ---------- almacenamiento (IndexedDB, queda en el teléfono) ---------- */
 const db = {
@@ -155,6 +158,31 @@ function filaMov(g, conFecha) {
     <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${g.img ? ' · 📎' : ''}</div></span>
     <span class="amt num" ${g.credito ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
 }
+// Movimientos que la app Android detectó en notificaciones y todavía no confirmaste.
+function detectados() {
+  if (!NATIVO) return [];
+  try {
+    return JSON.parse(NATIVO.pendientes()).map(d => {
+      const todo = `${d.titulo} ${d.texto}`, m = todo.match(RE_MONTO), f = new Date(d.hora);
+      return { ...d, monto: m ? soloNum(m[1]) : 0, ingreso: /recibiste|te envi|te transfiri|acredit|ingres[oó]|cobraste|te pagaron/i.test(todo),
+        desc: todo.replace(RE_MONTO, '').replace(/\s+/g, ' ').trim().slice(0, 60), fecha: `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}` };
+    }).filter(d => d.monto).reverse();
+  } catch { return []; }
+}
+function vDetectados() {
+  if (!NATIVO) return '';
+  if (!NATIVO.permiso()) {
+    return S.sinLector ? '' : `<div class="card pad aviso"><p><b>Anotá los pagos sin tipear.</b> Si le das permiso, la app lee las notificaciones de pago (Mercado Pago, bancos) y te las deja listas para confirmar. Solo guarda las que tienen un importe, y nada sale del teléfono.</p>
+      <p class="s">Si Android no te deja activarlo: Ajustes del teléfono → Aplicaciones → Gastos → ⋮ → Permitir ajustes restringidos.</p>
+      <div class="btns"><button class="btn" data-act="det-permiso">Activar lectura de pagos</button><button class="btn ghost" data-act="det-no">Ahora no</button></div></div>`;
+  }
+  const ds = detectados();
+  if (!ds.length) return '';
+  return `<h2><span>Detectados en notificaciones</span><span class="num">${ds.length}</span></h2><div class="card">${ds.slice(0, 20).map(d => `<div class="row">
+    <button class="grow" data-act="det-usar" data-id="${esc(d.id)}" style="text-align:left"><div class="t" style="white-space:normal">${esc(d.desc || d.app)}</div><div class="s">${esc(d.app)} · ${etiquetaDia(d.fecha)} · ${d.ingreso ? 'ingreso' : 'gasto'}</div></button>
+    <span class="amt num">${fmt(d.monto)}</span><button class="x" data-act="det-quitar" data-id="${esc(d.id)}" aria-label="Descartar">✕</button></div>`).join('')}</div>
+    <div class="hint">Tocá uno para revisarlo y anotarlo. La ✕ lo descarta.</div>`;
+}
 // Tarjetas con algo sin pagar que vencen en los próximos 7 días (o ya vencieron).
 function vencimientos() {
   const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
@@ -198,7 +226,7 @@ function vInicio() {
   const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
   const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
   const buscar = S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '';
-  return `${aviso}${venc}<section class="hero">
+  return `${aviso}${venc}${ym === hoy().slice(0, 7) ? vDetectados() : ''}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}</div>
@@ -426,6 +454,7 @@ function vAjustes() {
     <h2><span>Categorías</span></h2><div class="card">
     ${S.categorias.map(c => `<button class="row" data-act="editar-cat" data-id="${c.id}"><span class="emoji">${esc(c.emoji)}</span><span class="grow t">${esc(c.nombre)}</span></button>`).join('')}
     <button class="row" data-act="nueva-cat"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
+    ${NATIVO ? `<h2><span>Lectura de pagos</span></h2><div class="card"><button class="row" data-act="det-permiso"><span class="grow">Leer notificaciones de pago</span><span class="badge">${NATIVO.permiso() ? 'Activada' : 'Desactivada'}</span></button></div><div class="hint">Se cambia desde los Ajustes del teléfono; tocá para abrirlos.</div>` : ''}
     <h2><span>Tus datos</span></h2>
     <div class="hint">Todo queda guardado solo en este teléfono. Último respaldo: <b>${S.ultimoRespaldo ? new Date(S.ultimoRespaldo + 'T12:00').toLocaleDateString('es-AR') : 'nunca'}</b>. El respaldo no incluye las fotos de los comprobantes.</div>
     <div class="btns">
@@ -484,7 +513,8 @@ function visibilidad() {
 function mostrarThumb(blob) {
   const pdf = blob.type === 'application/pdf', t = $(pdf ? '#pdf' : '#thumb'), otro = $(pdf ? '#thumb' : '#pdf');
   if (!t) return;
-  t[pdf ? 'href' : 'src'] = URL.createObjectURL(blob); t.hidden = false; otro.hidden = true;
+  if (pdf && NATIVO) t.textContent = '📄 PDF adjunto'; else t[pdf ? 'href' : 'src'] = URL.createObjectURL(blob);
+  t.hidden = false; otro.hidden = true;
 }
 // Achica la foto del comprobante para que no ocupe mucho lugar.
 async function achicar(file) {
@@ -510,13 +540,13 @@ const esCredito = id => cuenta(id).tipo === 'credito';
 
 async function formGasto(g, extra = {}) {
   const ed = !!g;
-  g = g || { monto: extra.monto || 0, cat: extra.cat || S.categorias[0]?.id, cuentaId: extra.cuentaId || (S.ultimaCuenta && S.cuentas.some(c => c.id === S.ultimaCuenta) ? S.ultimaCuenta : S.cuentas[0]?.id), desc: extra.desc || '', fecha: hoy() };
+  g = g || { monto: extra.monto || 0, cat: extra.cat || S.categorias[0]?.id, cuentaId: extra.cuentaId || (S.ultimaCuenta && S.cuentas.some(c => c.id === S.ultimaCuenta) ? S.ultimaCuenta : S.cuentas[0]?.id), desc: extra.desc || '', fecha: extra.fecha || hoy() };
   let img = extra.img || (ed && g.img ? await db.get('img:' + g.id).catch(() => null) : null);
   abrir({
-    title: ed ? 'Editar gasto' : 'Nuevo gasto', adjunto: true, imagen: img,
+    title: ed ? 'Editar gasto' : 'Nuevo gasto', adjunto: true, imagen: img, despues: extra.despues,
     fields: [
       { name: 'monto', type: 'money', value: g.monto },
-      ...(ed ? [] : [{ name: 'clase', type: 'chips', value: 'gasto', options: [{ v: 'gasto', l: 'Gasté' }, { v: 'ingreso', l: 'Me entró plata' }] }]),
+      ...(ed ? [] : [{ name: 'clase', type: 'chips', value: extra.clase || 'gasto', options: [{ v: 'gasto', l: 'Gasté' }, { v: 'ingreso', l: 'Me entró plata' }] }]),
       { name: 'cat', type: 'chips', label: 'Categoría', value: g.cat, options: S.categorias.map(c => ({ v: c.id, l: `${c.emoji} ${c.nombre}` })), showIf: v => v.clase !== 'ingreso' },
       { name: 'cuentaId', type: 'chips', label: 'Pagué con', value: g.cuentaId, options: opCuentas(), showIf: v => v.clase !== 'ingreso' },
       { name: 'cuotas', type: 'chips', label: 'Cuotas', value: 1, options: [1, 2, 3, 6, 9, 12, 18, 24].map(n => ({ v: n, l: n === 1 ? '1 pago' : String(n) })), showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
@@ -681,6 +711,7 @@ function formPresu() {
 
 /* ---------- respaldo ---------- */
 function descargar(nombre, texto, tipo) {
+  if (NATIVO) { NATIVO.guardar(nombre, tipo, texto); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([texto], { type: tipo }));
   a.download = nombre; a.click();
@@ -689,6 +720,7 @@ function descargar(nombre, texto, tipo) {
 async function respaldar(soloDescargar) {
   const texto = JSON.stringify(S, null, 1), n = `gastos-respaldo-${hoy()}`;
   const listo = () => { S.ultimoRespaldo = hoy(); guardar(); toast('Respaldo guardado'); };
+  if (NATIVO && !soloDescargar) { if (NATIVO.compartir(n + '.json', 'application/json', texto)) listo(); return; }
   if (!soloDescargar) {
     // En Android abre el menú Compartir para mandarlo a Drive, WhatsApp, mail, etc.
     for (const f of [new File([texto], n + '.json', { type: 'application/json' }), new File([texto], n + '.txt', { type: 'text/plain' })]) {
@@ -806,11 +838,42 @@ async function levantarCompartido() {
     let img = null;
     if (a) { const b = await a.blob(); if (b.type.startsWith('image/') || b.type === 'application/pdf') img = await achicar(b); }
     await c.delete('compartido-texto'); await c.delete('compartido-archivo');
-    const m = texto.match(/\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
-    await formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
-    if (!m && img) autocompletar(img);
+    await abrirCompartido(texto, img);
   } catch { formGasto(); }
 }
+async function abrirCompartido(texto, img) {
+  const m = texto.match(RE_MONTO);
+  await formGasto(null, { monto: m ? soloNum(m[1]) : 0, img, desc: '' });
+  if (!m && img) autocompletar(img);
+}
+
+/* ---------- puente con la app Android ---------- */
+let arrancado = false;
+// La parte nativa avisa que llegó algo por "Compartir"; la página lo pide y abre el formulario.
+window.nativoCompartido = async () => {
+  if (!arrancado || !NATIVO?.hayCompartido()) return;
+  const texto = NATIVO.compartidoTexto(), mime = NATIVO.compartidoMime(), b64 = NATIVO.compartidoDatos();
+  NATIVO.compartidoListo();
+  try {
+    let img = null;
+    if (b64 && (mime.startsWith('image/') || mime === 'application/pdf')) {
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      img = await achicar(new Blob([bytes], { type: mime }));
+    }
+    if (hoja) cerrar();
+    tab = 'inicio'; render();
+    await abrirCompartido(texto, img);
+  } catch { toast('No pude abrir lo que compartiste'); }
+};
+// Al volver a la app: refresca por si se detectaron pagos nuevos.
+window.nativoVolvio = () => { if (!hoja) render(); };
+// Botón Atrás de Android: cierra el formulario o vuelve a Inicio. Devuelve false si no había nada que cerrar.
+window.atras = () => {
+  if (hoja) { cerrar(); return true; }
+  if (tab !== 'inicio') { tab = 'inicio'; render(); return true; }
+  return false;
+};
 
 /* ---------- eventos ---------- */
 let tToast;
@@ -833,6 +896,21 @@ const acciones = {
     const p = S.pagos[ym] ??= {}, its = compsMes(ym).filter(x => x.c.cuentaId === id), todo = its.every(x => p[x.c.id]);
     for (const x of its) { if (todo) delete p[x.c.id]; else p[x.c.id] = true; }
     guardar();
+  },
+  'det-permiso': () => { S.sinLector = false; NATIVO.pedirPermiso(); },
+  'det-no': () => { S.sinLector = true; guardar(); },
+  'det-usar': id => {
+    const d = detectados().find(x => x.id === id);
+    if (d) return formGasto(null, { monto: d.monto, desc: d.desc, fecha: d.fecha, clase: d.ingreso ? 'ingreso' : 'gasto', despues: () => NATIVO.descartar(id) });
+  },
+  'det-quitar': id => {
+    const d = detectados().find(x => x.id === id);
+    if (!d) return;
+    abrir({
+      title: 'Descartar', foco: false,
+      fields: [{ name: 'que', type: 'chips', value: 'uno', options: [{ v: 'uno', l: 'Solo este aviso' }, { v: 'app', l: `No leer más avisos de ${d.app}` }] }],
+      onSave: v => { if (v.que === 'app') NATIVO.bloquear(d.paquete); else NATIVO.descartar(id); },
+    });
   },
   'ir-mensual': () => { tab = 'mensual'; },
   'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
@@ -873,6 +951,7 @@ document.addEventListener('submit', async e => {
   if (!hoja) return;
   const err = await hoja.onSave(valores());
   if (typeof err === 'string') return toast(err);
+  hoja.despues?.();
   await guardar(); cerrar(); render();
 });
 document.addEventListener('input', e => {
@@ -892,6 +971,8 @@ document.addEventListener('change', async e => {
 (async () => {
   try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; } catch { toast('No se pudo leer lo guardado'); }
   render();
+  arrancado = true;
+  window.nativoCompartido();
   navigator.storage?.persist?.();
   actualizarDolar();
   // Baja en segundo plano lo necesario para leer comprobantes, así después funciona sin conexión.

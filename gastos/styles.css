@@ -160,3 +160,5 @@ td.est { color: var(--muted); }
 .evo .ml { font-size: 12px; color: var(--muted); padding: 5px 0; text-transform: capitalize; }
 .evo button.on .ml { color: var(--text); font-weight: 650; }
 .vto .grow { flex: 1; }
+.x { flex: none; width: 36px; height: 36px; border-radius: 50%; color: var(--muted); font-size: 16px; }
+.aviso p.s { color: var(--muted); font-size: 13px; }

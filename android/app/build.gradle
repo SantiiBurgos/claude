@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'ar.gastos.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'ar.gastos.app'
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // La llave de firma no vive en el repositorio: la compilación la recibe por variables de entorno.
+    signingConfigs {
+        fija {
+            storeFile file(System.getenv('LLAVE_ARCHIVO') ?: 'falta-llave.keystore')
+            storePassword System.getenv('LLAVE_CLAVE')
+            keyAlias 'gastos'
+            keyPassword System.getenv('LLAVE_CLAVE')
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.fija
+            minifyEnabled false
+        }
+        debug {
+            signingConfig signingConfigs.fija
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
