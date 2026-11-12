@@ -10,7 +10,7 @@ android {
         applicationId 'ar.gastos.app'
         minSdk 29
         targetSdk 34
-        versionCode 1
+        versionCode ((project.findProperty('vc') ?: '1') as int)
         versionName '1.0'
     }
 
