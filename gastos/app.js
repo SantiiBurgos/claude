@@ -185,7 +185,7 @@ function vMensual() {
     const its = items.filter(x => x.c.cuentaId === cta.id);
     if (!its.length) continue;
     const enSig = sum(compsMes(sig).filter(x => x.c.cuentaId === cta.id), x => x.monto);
-    html += `<h2><span>${esc(cta.nombre)}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card">`;
+    html += `<h2><span>${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card">`;
     for (const x of its) {
       const ok = !!pagos[x.c.id];
       html += `<div class="row ${ok ? 'done' : ''}">
@@ -240,9 +240,9 @@ function vAjustes() {
   return `<h2><span>Tope mensual del día a día</span></h2>
     <div class="card"><button class="row" data-act="editar-presu"><span class="grow">Tope</span><span class="amt num">${S.presupuesto ? fmt(S.presupuesto) : 'Sin tope'}</span></button></div>
     <h2><span>Tarjetas y medios de pago</span></h2><div class="card">
-    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}"><span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? 'Crédito' : 'Contado'}</span></button>`).join('')}
+    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}"><span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
     <button class="row" data-act="nueva-cuenta"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
-    <div class="hint">Lo que cargues con un medio de <b>crédito</b> va a la pestaña Mensual desde el mes siguiente. Lo de <b>contado</b> cuenta como gasto del día.</div>
+    <div class="hint">Lo que cargues con un medio de <b>crédito</b> va a la pestaña Mensual. Si le ponés el día de cierre a la tarjeta, la app calcula sola en qué mes entra cada compra. Lo de <b>contado</b> cuenta como gasto del día.</div>
     <h2><span>Categorías</span></h2><div class="card">
     ${S.categorias.map(c => `<button class="row" data-act="editar-cat" data-id="${c.id}"><span class="emoji">${esc(c.emoji)}</span><span class="grow t">${esc(c.nombre)}</span></button>`).join('')}
     <button class="row" data-act="nueva-cat"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
@@ -262,6 +262,7 @@ let hoja = null;
 function abrir(cfg) {
   hoja = cfg;
   const campo = f => {
+    if (f.type === 'nota') return `<div class="f hint" data-f="${f.name}"></div>`;
     const lab = f.label ? `<span class="lab">${esc(f.label)}</span>` : '';
     if (f.type === 'money') return `<div class="f money" data-f="${f.name}"><span>$</span><input name="${f.name}" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(f.value)}" aria-label="${esc(f.label || 'Monto')}"></div>`;
     if (f.type === 'chips') return `<div class="f" data-f="${f.name}">${lab}<div class="chips">${f.options.map(o => `<label class="chip"><input type="radio" name="${f.name}" value="${esc(o.v)}" ${String(o.v) === String(f.value) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div></div>`;
@@ -283,6 +284,7 @@ function cerrar() { $('#overlay').hidden = true; $('#sheet').innerHTML = ''; hoj
 function valores() {
   const v = {};
   for (const f of hoja.fields) {
+    if (f.type === 'nota') continue;
     if (f.type === 'chips') v[f.name] = $(`#form input[name="${f.name}"]:checked`)?.value ?? '';
     else if (f.type === 'money') v[f.name] = soloNum($(`#form [name="${f.name}"]`).value);
     else if (f.type === 'number') v[f.name] = Number($(`#form [name="${f.name}"]`).value.replace(',', '.')) || 0;
@@ -292,7 +294,11 @@ function valores() {
 }
 function visibilidad() {
   const v = valores();
-  for (const f of hoja.fields) if (f.showIf) $(`#form [data-f="${f.name}"]`).hidden = !f.showIf(v);
+  for (const f of hoja.fields) {
+    const el = $(`#form [data-f="${f.name}"]`);
+    if (f.showIf) el.hidden = !f.showIf(v);
+    if (f.type === 'nota' && !el.hidden) el.textContent = f.texto(v);
+  }
 }
 function mostrarThumb(blob) {
   const pdf = blob.type === 'application/pdf', t = $(pdf ? '#pdf' : '#thumb'), otro = $(pdf ? '#thumb' : '#pdf');
@@ -310,6 +316,14 @@ async function achicar(file) {
   return new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.75));
 }
 
+// Mes en que se paga una compra con tarjeta, según el día de cierre y de vencimiento del resumen.
+function mesDePago(cta, fecha) {
+  const m = fecha.slice(0, 7);
+  if (!cta.cierre) return addYm(m, 1);
+  const mesCierre = Number(fecha.slice(8)) <= cta.cierre ? m : addYm(m, 1);
+  return cta.vence > cta.cierre ? mesCierre : addYm(mesCierre, 1);
+}
+const primerPago = v => v.primer === 'auto' ? mesDePago(cuenta(v.cuentaId), v.fecha || hoy()) : addYm((v.fecha || hoy()).slice(0, 7), Number(v.primer));
 const opCuentas = () => S.cuentas.map(c => ({ v: c.id, l: c.nombre }));
 const esCredito = id => cuenta(id).tipo === 'credito';
 
@@ -325,7 +339,11 @@ async function formGasto(g, extra = {}) {
       { name: 'cat', type: 'chips', label: 'Categoría', value: g.cat, options: S.categorias.map(c => ({ v: c.id, l: `${c.emoji} ${c.nombre}` })), showIf: v => v.clase !== 'ingreso' },
       { name: 'cuentaId', type: 'chips', label: 'Pagué con', value: g.cuentaId, options: opCuentas(), showIf: v => v.clase !== 'ingreso' },
       { name: 'cuotas', type: 'chips', label: 'Cuotas', value: 1, options: [1, 2, 3, 6, 9, 12, 18, 24].map(n => ({ v: n, l: n === 1 ? '1 pago' : String(n) })), showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
-      { name: 'primer', type: 'chips', label: 'Primer pago', value: 1, options: [{ v: 1, l: `En ${mesNombre(addYm(hoy().slice(0, 7), 1))}` }, { v: 0, l: `En ${mesNombre(hoy().slice(0, 7))}` }], showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
+      { name: 'primer', type: 'chips', label: 'Primer pago', value: 'auto', options: [{ v: 'auto', l: 'Automático' }, { v: 0, l: 'Mismo mes' }, { v: 1, l: 'Mes siguiente' }, { v: 2, l: 'A los 2 meses' }], showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId) },
+      { name: 'cuando', type: 'nota', showIf: v => !ed && v.clase !== 'ingreso' && esCredito(v.cuentaId), texto: v => {
+        const c = cuenta(v.cuentaId), n = Number(v.cuotas) || 1, m = primerPago(v);
+        return `${n > 1 ? 'La primera cuota entra' : 'Entra'} en ${mesNombre(m)}${v.primer === 'auto' ? (c.cierre ? ` (${c.nombre} cierra el ${c.cierre})` : '. Cargá el día de cierre de la tarjeta en Ajustes para que se calcule solo') : ''}.`;
+      } },
       { name: 'desc', type: 'text', label: 'Detalle (opcional)', value: g.desc, placeholder: 'Ej: almuerzo, nafta…' },
       { name: 'fecha', type: 'date', label: 'Fecha', value: g.fecha },
     ],
@@ -345,7 +363,7 @@ async function formGasto(g, extra = {}) {
       S.ultimaCuenta = v.cuentaId;
       if (!ed && esCredito(v.cuentaId)) {
         // Compra con crédito: pasa a la pestaña Mensual, repartida en cuotas.
-        const n = Number(v.cuotas) || 1, inicio = addYm((v.fecha || hoy()).slice(0, 7), Number(v.primer));
+        const n = Number(v.cuotas) || 1, inicio = primerPago(v);
         S.compromisos.push({ id, nombre: v.desc || categoria(v.cat).nombre, cuentaId: v.cuentaId, monto: Math.round(v.monto / n), tipo: n > 1 ? 'cuotas' : 'unico', inicio, total: n, fecha: v.fecha, cat: v.cat, img: !!img });
         toast(`${cuenta(v.cuentaId).nombre}: ${n > 1 ? n + ' cuotas de ' + fmt(v.monto / n) : fmt(v.monto)} desde ${mesNombre(inicio)}`);
       } else {
@@ -410,9 +428,13 @@ function formCuenta(c) {
     fields: [
       { name: 'nombre', type: 'text', label: 'Nombre', value: c?.nombre, placeholder: 'Ej: Amex, Mercado Pago…' },
       { name: 'tipo', type: 'chips', label: 'Cómo se paga', value: c?.tipo || 'credito', options: [{ v: 'credito', l: 'Crédito (resumen mensual)' }, { v: 'contado', l: 'Contado (débito, efectivo)' }] },
+      { name: 'cierre', type: 'number', label: 'Día del mes en que cierra el resumen (opcional)', value: c?.cierre || '', placeholder: 'Ej: 25', showIf: v => v.tipo === 'credito' },
+      { name: 'vence', type: 'number', label: 'Día del mes en que vence el pago (opcional)', value: c?.vence || '', placeholder: 'Ej: 10', showIf: v => v.tipo === 'credito' },
     ],
     onSave: v => {
       if (!v.nombre) return 'Ponele un nombre';
+      const dia = x => Math.min(31, Math.max(0, Math.round(x)));
+      v.cierre = v.tipo === 'credito' ? dia(v.cierre) : 0; v.vence = v.tipo === 'credito' && v.cierre ? dia(v.vence) : 0;
       if (c) Object.assign(c, v); else S.cuentas.push({ id: uid(), ...v });
     },
     onDelete: c ? () => {
