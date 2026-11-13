@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 21; // subir junto con el nombre del caché en sw.js
+const VERSION = 22; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -142,7 +142,7 @@ function render() {
   const actual = ym === hoy().slice(0, 7);
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
   for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === (tab === 'deudor' ? 'plan' : tab));
-  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar, deudor: vDeudor })[tab]();
+  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar, deudor: vDeudor, importar: vImportar })[tab]();
   if (tab === 'plan') actualizarDolarAhorro();
 }
 
@@ -250,7 +250,7 @@ function vInicio() {
   const frec = frecuentes();
   const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
   const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
-  const buscar = S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '';
+  const buscar = `<button class="btn line" data-act="ir-importar">Importar captura de Mercado Pago</button>` + (S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '');
   return `${aviso}${venc}${ym === hoy().slice(0, 7) ? vDetectados() : ''}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
@@ -769,7 +769,7 @@ async function formGasto(g, extra = {}) {
   abrir({
     title: ed ? 'Editar gasto' : 'Nuevo gasto', adjunto: true, imagen: img, despues: extra.despues,
     fields: [
-      { name: 'monto', type: 'money', value: g.monto },
+      { name: 'monto', type: 'money', value: Math.abs(g.monto) },
       ...(ed ? [] : [{ name: 'clase', type: 'chips', value: extra.clase || 'gasto', options: [{ v: 'gasto', l: 'Gasté' }, { v: 'ingreso', l: 'Me entró plata' }] }]),
       { name: 'cat', type: 'chips', label: 'Categoría', value: g.cat, options: S.categorias.map(c => ({ v: c.id, l: `${c.emoji} ${c.nombre}` })), showIf: v => v.clase !== 'ingreso' },
       { name: 'cuentaId', type: 'chips', label: 'Pagué con', value: g.cuentaId, options: opCuentas(), showIf: v => v.clase !== 'ingreso' },
@@ -802,7 +802,7 @@ async function formGasto(g, extra = {}) {
         S.compromisos.push({ id, nombre: v.desc || categoria(v.cat).nombre, cuentaId: v.cuentaId, monto: Math.round(v.monto / n), tipo: n > 1 ? 'cuotas' : 'unico', inicio, total: n, fecha: v.fecha, cat: v.cat, img: !!img });
         toast(`${cuenta(v.cuentaId).nombre}: ${n > 1 ? n + ' cuotas de ' + fmt(v.monto / n) : fmt(v.monto)} desde ${mesNombre(inicio)}`);
       } else {
-        const nuevo = { id, fecha: v.fecha || hoy(), monto: v.monto, desc: v.desc, cat: v.cat, cuentaId: v.cuentaId, img: !!img };
+        const nuevo = { id, fecha: v.fecha || hoy(), monto: ed && g.monto < 0 ? -v.monto : v.monto, desc: v.desc, cat: v.cat, cuentaId: v.cuentaId, img: !!img };
         if (ed) S.gastos[S.gastos.findIndex(x => x.id === id)] = nuevo; else S.gastos.push(nuevo);
         if (!ed) toast('Gasto anotado');
       }
@@ -1029,6 +1029,184 @@ function interpretar(lineas) {
   }
   return { monto: mejor?.monto || 0, fecha };
 }
+/* ---------- importar capturas de "Actividad" de Mercado Pago ---------- */
+const imp = { filas: [], leyendo: false };
+// Una captura con desplazamiento es mucho más alta que ancha; un comprobante suelto, no.
+async function esCapturaLarga(blob) {
+  if (!blob.type.startsWith('image/')) return false;
+  try { const b = await createImageBitmap(blob); return b.height > b.width * 2.6; } catch { return false; }
+}
+const RE_TIPO_MP = /(Transferencia recibida|Transferencia enviada|Pago en tienda f[ií]sica|Pago online|Pago autom[aá]tico|Pago de cuotas|Pago de servicios?|Devoluci[oó]n de dinero|Devuelto|Retiro de efectivo|Ingreso de dinero|Rendimientos|Pago)/i;
+// Convierte el texto leído de la captura en movimientos: { fecha, nombre, monto (con signo), tipo, hora, medio }.
+function leerActividad(texto) {
+  const hoyS = hoy(), filas = [];
+  let fecha = '', ult = null;
+  for (const cruda of texto.split('\n')) {
+    const l = cruda.trim();
+    if (!l) continue;
+    const f = !l.includes('$') && l.toLowerCase().match(/(?:^|\D)(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?: de (\d{4}))?/);
+    if (f && MES_NUM[f[2].slice(0, 3)]) {
+      const anio = Number(f[3]) || Number(hoyS.slice(0, 4)), md = `-${pad(MES_NUM[f[2].slice(0, 3)])}-${pad(f[1])}`;
+      fecha = !f[3] && anio + md > hoyS ? (anio - 1) + md : anio + md; // sin año: si cae en el futuro, es del año pasado
+      ult = null; continue;
+    }
+    // Corrige confusiones típicas del lector dentro del importe ("6:351", "16.U00").
+    const l2 = l.replace(/\$\s*[\dOoUu.:,]+/, x => x.replace(/:/g, '.').replace(/[OoUu]/g, '0'));
+    const m = l2.match(/^(.*?)\s*([+\-–—])?\s*\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?!\d)/);
+    if (m && fecha) {
+      // Saca los restos de íconos que el lector confunde con letras al principio del renglón.
+      const p = m[1].split(/\s+/).filter(Boolean);
+      while (p.length > 1 && (p[0].length === 1 || (p[0].length <= 3 && /[^\p{L}\p{N}]/u.test(p[0])))) p.shift();
+      const nombre = p.join(' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.)]+$/gu, '');
+      if (nombre && !RE_TIPO_MP.test(nombre)) {
+        ult = { fecha, nombre, abs: Math.round(Number(m[3].replace(/\./g, '') + '.' + (m[4] || '0'))), signo: m[2] ? (m[2] === '+' ? 1 : -1) : 0, tipo: '', hora: '', medio: '' };
+        // Importe sospechoso: muy chico, o con letras pegadas después (parte del número quedó ilegible).
+        if (ult.abs < 100 || /^\s*[A-Z0-9]{2,4}\b/.test(l2.slice(m[0].length))) ult.dudoso = true;
+        filas.push(ult); continue;
+      }
+    }
+    if (!ult) continue;
+    const t = l.match(RE_TIPO_MP);
+    if (t && !ult.tipo) {
+      ult.tipo = t[1][0].toUpperCase() + t[1].slice(1).toLowerCase();
+      const h = l.match(/(\d{2})[:.](\d{2})\W*$/); if (h) ult.hora = h[1] + ':' + h[2];
+    } else if (/dinero disponible/i.test(l)) ult.medio = 'disponible';
+    else if (/prepaga/i.test(l)) ult.medio = 'prepaga';
+    else if (/cr[eé]dito/i.test(l)) ult.medio = 'credito';
+  }
+  for (const r of filas) {
+    if (!r.signo) r.signo = /recibida|devoluci|devuelto|ingreso|rendimiento/i.test(r.tipo) ? 1 : -1; // si no se leyó el signo, lo deduce del tipo
+    r.monto = r.signo * r.abs;
+  }
+  return filas.filter(r => r.abs > 0);
+}
+const minutos = h => Number(h.slice(0, 2)) * 60 + Number(h.slice(3));
+const normal = t => t.toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
+const claveRegla = r => `${r.monto > 0 ? 'e' : 's'}:${normal(r.nombre)}:${r.medio || '-'}`;
+const cuentaAjena = () => S.cuentas.find(c => c.tipo === 'ajeno');
+const billetera = () => S.cuentas.find(c => c.id === S.ultimaCuenta && c.tipo === 'contado') || S.cuentas.find(c => c.tipo === 'contado') || S.cuentas[0];
+const RUBROS = [
+  ['transporte', /uber|didi|cabify|sube|emova|subte|colectiv|peaje|ypf|shell|axion|nafta|taxi/],
+  ['super', /coto|carrefour|jumbo|disco|vea|super|market|chino|almacen|verdul|carnicer/],
+  ['comida', /gallego|burger|mcdonald|mostaza|pedidos|rappi|cafe|coffee|resto|pizza|parrill|fonda|batata|bar |helad|panader|campo/],
+  ['salud', /farmac/], ['mascota', /veterin|pet/],
+];
+function rubro(nombre) {
+  const n = ' ' + nombre.toLowerCase() + ' ';
+  for (const [id, re] of RUBROS) if (re.test(n)) { const c = S.categorias.find(c => c.id === id || normal(c.nombre) === id); if (c) return c.id; }
+  return (S.categorias.find(c => c.id === 'otros') || S.categorias[0]).id;
+}
+function yaAnotado(r) {
+  return S.gastos.some(g => g.fecha === r.fecha && Math.abs(g.monto) === r.abs)
+    || (S.deudores || []).some(p => p.movs.some(m => m.fecha === r.fecha && Math.abs(m.monto) === r.abs))
+    || (r.monto > 0 && S.ingresos.some(i => i.fecha === r.fecha && i.monto === r.abs));
+}
+// Propone qué hacer con cada movimiento; después se puede cambiar uno por uno.
+function sugerir(filas) {
+  for (const r of filas) { r.sel = r.dudoso ? 'ignorar' : ''; r.motivo = r.dudoso ? '⚠ monto mal leído: anotalo a mano' : ''; }
+  // Un cobro y su devolución por el mismo monto el mismo día se anulan.
+  for (const d of filas) {
+    if (d.sel || d.monto <= 0 || !/devol|devuelto/i.test(d.tipo)) continue;
+    const par = filas.find(x => !x.sel && x.monto === -d.monto && x.fecha === d.fecha && normal(x.nombre) === normal(d.nombre));
+    if (par) { par.sel = d.sel = 'ignorar'; par.motivo = d.motivo = 'se anulan entre sí'; }
+  }
+  const ajena = cuentaAjena(), act = hoy().slice(0, 7);
+  for (const r of filas) {
+    if (r.sel) continue;
+    const regla = (S.reglas || {})[claveRegla(r)];
+    const fijo = r.monto < 0 && compsMes(r.fecha.slice(0, 7)).find(x => x.c.tipo === 'mensual' && Math.abs(x.monto - r.abs) <= Math.max(50, x.monto * .12) && (normal(x.c.nombre).includes(normal(r.nombre).slice(0, 5)) || normal(r.nombre).includes(normal(x.c.nombre).slice(0, 5))));
+    if (yaAnotado(r)) { r.sel = 'ignorar'; r.motivo = 'ya está anotado'; }
+    else if (fijo) r.sel = 'fijo:' + fijo.c.id;
+    else if (regla) r.sel = regla;
+    // Mismo comercio y misma hora, una parte con la prepaga y otra con dinero disponible: la prepaga es la del trabajo.
+    else if (ajena && r.monto < 0 && r.medio === 'prepaga' && filas.some(x => x !== r && x.fecha === r.fecha && x.hora && r.hora && Math.abs(minutos(x.hora) - minutos(r.hora)) <= 3 && normal(x.nombre) === normal(r.nombre) && x.medio === 'disponible')) r.sel = 'ajeno';
+    else r.sel = r.monto > 0 ? 'ingreso' : 'cat:' + rubro(r.nombre);
+  }
+  return filas;
+}
+function opcionesImp(r) {
+  const o = [], cats = S.categorias, deu = S.deudores || [];
+  if (r.monto < 0) {
+    for (const c of cats) o.push(['cat:' + c.id, `${c.emoji} ${c.nombre}`]);
+    if (cuentaAjena()) o.push(['ajeno', `No cuenta (${cuentaAjena().nombre})`]);
+    for (const p of deu) o.push(['deu:' + p.id, `Presté o pagué por ${p.nombre}`]);
+    for (const x of compsMes(r.fecha.slice(0, 7)).filter(x => x.c.tipo === 'mensual')) o.push(['fijo:' + x.c.id, `Es el fijo "${x.c.nombre}" (marcar pagado)`]);
+  } else {
+    o.push(['ingreso', 'Ingreso']);
+    for (const p of deu) o.push(['deu:' + p.id, `Me devolvió ${p.nombre}`]);
+    for (const c of cats) o.push(['rein:' + c.id, `Me devolvieron un gasto de ${c.nombre}`]);
+  }
+  o.push(['ignorar', 'No anotar']);
+  if (!o.some(x => x[0] === r.sel)) r.sel = o[0][0];
+  return o.map(([v, l]) => `<option value="${esc(v)}" ${v === r.sel ? 'selected' : ''}>${esc(l)}</option>`).join('');
+}
+const textoBotonImp = () => { const n = imp.filas.filter(r => r.sel !== 'ignorar').length; return n ? `Anotar ${n} ${n === 1 ? 'movimiento' : 'movimientos'}` : 'Nada para anotar'; };
+function vImportar() {
+  if (!imp.filas.length) {
+    return `<h2><span>Importar de Mercado Pago</span></h2><div class="card pad">
+      <p style="margin:0 0 10px">Sacá una captura con desplazamiento de <b>Actividad</b> en Mercado Pago y elegila acá. La app lee los movimientos y los anota por vos.</p>
+      <p class="hint" style="padding-top:0">La lectura se hace en el teléfono. Antes de guardar vas a poder revisar y corregir cada movimiento. Los que ya estén anotados se saltean.</p>
+      <label class="btn">${imp.leyendo ? 'Leyendo…' : 'Elegir capturas'}<input type="file" id="imp-archivos" accept="image/*" multiple hidden></label></div>
+      <div class="hint">También podés compartir la captura a Gastos desde la galería.</div>`;
+  }
+  let html = `<h2><span>${imp.filas.length} movimientos leídos</span></h2><div class="hint" style="padding-top:0">Revisá cómo se anota cada uno. La app recuerda lo que elijas para la próxima vez.</div>`, dia = '';
+  imp.filas.forEach((r, i) => {
+    if (r.fecha !== dia) { html += `${dia ? '</div>' : ''}<h2><span>${etiquetaDia(r.fecha)}</span></h2><div class="card">`; dia = r.fecha; }
+    html += `<div class="row imp"><span class="grow"><div class="t">${esc(r.nombre)}</div><div class="s">${esc(r.tipo || 'Movimiento')}${r.hora ? ' · ' + r.hora : ''}${r.motivo ? ' · ' + r.motivo : ''}</div>
+      <select data-imp="${i}" aria-label="Cómo anotarlo">${opcionesImp(r)}</select></span>
+      <span class="amt num" ${r.monto > 0 ? 'style="color:var(--accent)"' : ''}>${r.monto > 0 ? '+' : '−'} ${fmt(r.abs)}</span></div>`;
+  });
+  return html + `</div><div class="btns" style="margin-top:14px"><button class="btn" id="imp-boton" data-act="imp-aplicar">${textoBotonImp()}</button><button class="btn ghost" data-act="imp-limpiar">Descartar</button></div>`;
+}
+async function importarCapturas(archivos) {
+  imp.leyendo = true; if (tab === 'importar') render();
+  toast(archivos.length > 1 ? `Leyendo ${archivos.length} capturas…` : 'Leyendo la captura…');
+  let filas = [];
+  try {
+    for (const a of archivos) {
+      const bmp = await createImageBitmap(a);
+      // Agranda las capturas chicas para que las letras se lean; limita el alto para no pasarse de memoria.
+      const k = Math.min(Math.max(1, 2160 / bmp.width), 3, 16000 / bmp.height);
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(bmp, 0, 0, c.width, c.height);
+      const w = await motorOcr();
+      await w.setParameters({ tessedit_pageseg_mode: '6' });
+      const { data } = await w.recognize(c);
+      await w.setParameters({ tessedit_pageseg_mode: '11' });
+      filas.push(...leerActividad(data.text));
+    }
+  } catch { toast('No pude leer la captura'); }
+  // Si dos capturas se pisan, deja una sola copia de cada movimiento.
+  const vistos = new Set();
+  filas = filas.filter(r => { const k = [r.fecha, r.hora, r.monto, normal(r.nombre)].join('|'); if (r.hora && vistos.has(k)) return false; vistos.add(k); return true; })
+    // Un renglón cortado al borde de una captura (sin hora) que aparece completo en la otra.
+    .filter((r, _, todas) => r.hora || !todas.some(x => x !== r && x.hora && x.fecha === r.fecha && x.monto === r.monto && normal(x.nombre) === normal(r.nombre)))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
+  imp.leyendo = false; imp.filas = sugerir(filas);
+  tab = 'importar'; render(); window.scrollTo(0, 0);
+  if (!filas.length) toast('No encontré movimientos en esa imagen');
+}
+async function aplicarImportacion() {
+  let n = 0;
+  const contado = billetera(), ajena = cuentaAjena();
+  for (const r of imp.filas) {
+    const [que, id] = r.sel.split(':'), mes = r.fecha.slice(0, 7);
+    if (r.tocado || !r.motivo) (S.reglas ??= {})[claveRegla(r)] = r.sel; // recuerda la elección para ese comercio o persona
+    if (que === 'ignorar') continue;
+    n++;
+    if (que === 'cat') S.gastos.push({ id: uid(), fecha: r.fecha, monto: r.abs, desc: r.nombre, cat: id, cuentaId: contado.id, img: false });
+    else if (que === 'rein') S.gastos.push({ id: uid(), fecha: r.fecha, monto: -r.abs, desc: r.nombre + ' (me devolvió)', cat: id, cuentaId: contado.id, img: false });
+    else if (que === 'ajeno' && ajena) S.gastos.push({ id: uid(), fecha: r.fecha, monto: r.abs, desc: r.nombre, cat: rubro(r.nombre), cuentaId: ajena.id, img: false });
+    else if (que === 'ingreso') S.ingresos.push({ id: uid(), nombre: r.nombre, monto: r.abs, tipo: 'unico', inicio: mes, total: 1, fecha: r.fecha });
+    else if (que === 'deu') S.deudores.find(p => p.id === id)?.movs.push({ id: uid(), fecha: r.fecha, monto: -r.monto, nota: r.tipo || '' });
+    else if (que === 'fijo') (S.pagos[mes] ??= {})[id] = true;
+  }
+  imp.filas = []; tab = 'inicio';
+  await guardar();
+  toast(n ? `Listo: ${n} ${n === 1 ? 'movimiento anotado' : 'movimientos anotados'}` : 'No se anotó nada');
+}
+
 async function leerLienzo(c) {
   const { data } = await (await motorOcr()).recognize(c, {}, { blocks: true });
   const lineas = [];
@@ -1086,7 +1264,11 @@ async function levantarCompartido() {
     const t = await c.match('compartido-texto'), a = await c.match('compartido-archivo');
     const texto = t ? await t.text() : '';
     let img = null;
-    if (a) { const b = await a.blob(); if (b.type.startsWith('image/') || b.type === 'application/pdf') img = await achicar(b); }
+    if (a) {
+      const b = await a.blob();
+      if (await esCapturaLarga(b)) { await c.delete('compartido-texto'); await c.delete('compartido-archivo'); tab = 'importar'; render(); return importarCapturas([b]); }
+      if (b.type.startsWith('image/') || b.type === 'application/pdf') img = await achicar(b);
+    }
     await c.delete('compartido-texto'); await c.delete('compartido-archivo');
     await abrirCompartido(texto, img);
   } catch { formGasto(); }
@@ -1109,7 +1291,9 @@ window.nativoCompartido = async () => {
     if (b64 && (mime.startsWith('image/') || mime === 'application/pdf')) {
       const bin = atob(b64), bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      img = await achicar(new Blob([bytes], { type: mime }));
+      const original = new Blob([bytes], { type: mime });
+      if (await esCapturaLarga(original)) { if (hoja) cerrar(); tab = 'importar'; render(); return importarCapturas([original]); }
+      img = await achicar(original);
     }
     if (hoja) cerrar();
     tab = 'inicio'; render();
@@ -1124,6 +1308,7 @@ window.nativoVolvio = () => { if (!hoja && tab === 'inicio') render(); };
 window.atras = () => {
   if (hoja) { cerrar(); return true; }
   if (tab === 'deudor') { tab = 'plan'; render(); return true; }
+  if (tab === 'importar' && imp.filas.length) { imp.filas = []; render(); return true; }
   if (tab !== 'inicio') { tab = 'inicio'; render(); return true; }
   return false;
 };
@@ -1169,6 +1354,9 @@ const acciones = {
   'pagar-hoy': id => { (S.pagos[hoy().slice(0, 7)] ??= {})[id] = true; guardar(); },
   'ir-mensual': () => { tab = 'mensual'; },
   'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
+  'ir-importar': () => { tab = 'importar'; window.scrollTo(0, 0); },
+  'imp-aplicar': aplicarImportacion,
+  'imp-limpiar': () => { imp.filas = []; },
   'evo': m => { evoSel = m; },
   'pagar': id => { const p = S.pagos[ym] ??= {}; if (p[id]) delete p[id]; else p[id] = true; guardar(); },
   'nueva-cuenta': () => formCuenta(),
@@ -1223,6 +1411,8 @@ document.addEventListener('input', e => {
   if (e.target.closest('.f.money') || e.target.dataset.miles != null) e.target.value = miles(soloNum(e.target.value));
 });
 document.addEventListener('change', async e => {
+  if (e.target.id === 'imp-archivos' && e.target.files.length) { const fs = [...e.target.files]; e.target.value = ''; return importarCapturas(fs); }
+  if (e.target.dataset.imp != null) { const f = imp.filas[Number(e.target.dataset.imp)]; f.sel = e.target.value; f.tocado = true; $('#imp-boton').textContent = textoBotonImp(); return; }
   if (e.target.id === 'importar' && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; return importar(f); }
   if (e.target.id === 'sim') { guardar(); return; }
   if (e.target.id === 'color-otro') { $('#form input[value="otro"]').checked = true; e.target.parentElement.style.background = e.target.value; return; }
