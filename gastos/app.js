@@ -18,7 +18,9 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 15; // subir junto con el nombre del caché en sw.js
+const VERSION = 16; // subir junto con el nombre del caché en sw.js
+const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
+const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
 
 /* ---------- almacenamiento (IndexedDB, queda en el teléfono) ---------- */
@@ -467,7 +469,13 @@ function vAjustes() {
       <button class="btn ghost" data-act="csv">Exportar gastos a planilla (CSV)</button>
       <button class="btn danger" data-act="borrar-todo">Borrar todo</button>
     </div>
-    <div class="hint" style="text-align:center">Versión ${VERSION}${NATIVO ? ' · app Android' : ''}</div>`;
+    <h2><span>Versión</span></h2>
+    <div class="hint">Estás en la versión <b>${VERSION}</b>${NATIVO ? ` · app Android ${NATIVO.version()}` : ''}. La app se actualiza sola al abrirla; con este botón lo forzás. No toca tus datos.</div>
+    <div class="btns">
+      <button class="btn ghost" data-act="actualizar">Buscar actualización</button>
+      ${NATIVO ? `<a class="btn ghost" href="${APK}${CON_LECTOR ? 'gastos-con-lector.apk' : 'gastos.apk'}">Descargar la app Android más reciente${NATIVO.version() < NATIVO_ULTIMA ? ' (hay una nueva)' : ''}</a>` : ''}
+    </div>
+    ${NATIVO ? '<div class="hint">La app Android casi nunca hace falta reinstalarla: lo que cambia seguido es lo de arriba. Si la bajás, se instala encima de la actual sin borrar datos.</div>' : ''}`;
 }
 
 /* ---------- formularios (hoja inferior) ---------- */
@@ -778,6 +786,23 @@ function descargar(nombre, texto, tipo) {
   a.download = nombre; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
+// Baja de nuevo los archivos de la app, reemplaza la copia guardada y recarga. Los datos no se tocan.
+async function actualizarApp() {
+  if (!navigator.onLine) return toast('Necesitás conexión para actualizar');
+  toast('Buscando la última versión…');
+  try {
+    const archivos = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest'];
+    const frescos = await Promise.all(archivos.map(f => fetch(f, { cache: 'no-store' })));
+    if (frescos.some(r => !r.ok)) throw 0;
+    // Deja una sola copia guardada, con lo recién bajado, que es la que va a usar la app al recargar.
+    const nombres = (await caches.keys()).filter(k => k.startsWith('gastos-v'));
+    const destino = await caches.open(nombres.sort().pop() || 'gastos-v0');
+    await Promise.all(frescos.map((r, i) => destino.put(new URL(archivos[i], location.href).href.split('?')[0], r)));
+    (await navigator.serviceWorker?.getRegistration?.())?.update().catch(() => {});
+    sessionStorage.setItem('venia-de', String(VERSION));
+    location.reload();
+  } catch { toast('No se pudo actualizar: revisá la conexión'); }
+}
 async function respaldar(soloDescargar) {
   const texto = JSON.stringify(S, null, 1), n = `gastos-respaldo-${hoy()}`;
   const listo = () => { S.ultimoRespaldo = hoy(); guardar(); toast('Respaldo guardado'); };
@@ -992,6 +1017,7 @@ const acciones = {
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
   'editar-dolar': () => formDolar(),
+  'actualizar': actualizarApp,
   'editar-meta': () => formMeta(),
   'editar-ahorro': m => formAhorro(m),
   'exportar': () => respaldar(true),
@@ -1054,6 +1080,12 @@ document.addEventListener('change', async e => {
   try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; } catch { toast('No se pudo leer lo guardado'); }
   render();
   arrancado = true;
+  const antes = Number(sessionStorage.getItem('venia-de'));
+  if (antes) {
+    sessionStorage.removeItem('venia-de');
+    tab = 'ajustes'; render();
+    toast(VERSION > antes ? `Actualizada: versión ${antes} → ${VERSION}` : `Ya tenías la última versión (${VERSION})`);
+  }
   window.nativoCompartido();
   navigator.storage?.persist?.();
   actualizarDolar();

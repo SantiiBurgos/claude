@@ -174,3 +174,4 @@ td.est { color: var(--muted); }
 .logo-f { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .logo-f .logo { width: 56px; height: 56px; border-radius: 12px; padding: 5px; }
 .logo-f .logo[hidden] { display: none; }
+a.btn { text-decoration: none; }

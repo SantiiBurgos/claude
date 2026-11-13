@@ -1,4 +1,4 @@
-const CACHE = 'gastos-v15';
+const CACHE = 'gastos-v16';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -32,6 +32,8 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // Pedidos que exigen ir a la red (el botón "Buscar actualización"): no se responden con la copia guardada.
+  if (e.request.cache === 'no-store') return;
   // Responde del caché al instante y actualiza en segundo plano.
   e.respondWith(
     caches.open(CACHE).then(async c => {
