@@ -37,16 +37,5 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-
-        <!-- Lee las notificaciones de pago. Solo funciona si el usuario lo habilita en Ajustes del teléfono. -->
-        <service
-            android:name=".Lector"
-            android:exported="true"
-            android:label="Gastos: leer pagos"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
     </application>
 </manifest>

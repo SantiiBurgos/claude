@@ -23,6 +23,14 @@ android {
             keyPassword System.getenv('LLAVE_CLAVE')
         }
     }
+    // Dos variantes de la misma app (mismo identificador y misma firma, así una se instala encima de la otra):
+    //  - basica: sin lectura de notificaciones. Play Protect la deja instalar desde el navegador.
+    //  - lector: suma la lectura de notificaciones de pago. Play Protect bloquea su instalación desde el navegador.
+    flavorDimensions = ['tipo']
+    productFlavors {
+        basica { dimension 'tipo' }
+        lector { dimension 'tipo' }
+    }
     buildTypes {
         release {
             signingConfig signingConfigs.fija

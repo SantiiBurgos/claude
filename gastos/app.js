@@ -160,7 +160,7 @@ function filaMov(g, conFecha) {
 }
 // Movimientos que la app Android detectó en notificaciones y todavía no confirmaste.
 function detectados() {
-  if (!NATIVO) return [];
+  if (!NATIVO || !CON_LECTOR) return [];
   try {
     return JSON.parse(NATIVO.pendientes()).map(d => {
       const todo = `${d.titulo} ${d.texto}`, m = todo.match(RE_MONTO), f = new Date(d.hora);
@@ -169,8 +169,10 @@ function detectados() {
     }).filter(d => d.monto).reverse();
   } catch { return []; }
 }
+// La variante básica de la app Android no trae la lectura de notificaciones.
+const CON_LECTOR = !!NATIVO && (NATIVO.tieneLector ? NATIVO.tieneLector() : true);
 function vDetectados() {
-  if (!NATIVO) return '';
+  if (!CON_LECTOR) return '';
   if (!NATIVO.permiso()) {
     return S.sinLector ? '' : `<div class="card pad aviso"><p><b>Anotá los pagos sin tipear.</b> Si le das permiso, la app lee las notificaciones de pago (Mercado Pago, bancos) y te las deja listas para confirmar. Solo guarda las que tienen un importe, y nada sale del teléfono.</p>
       <p class="s">Si Android no te deja activarlo: Ajustes del teléfono → Aplicaciones → Gastos → ⋮ → Permitir ajustes restringidos.</p>
@@ -454,7 +456,7 @@ function vAjustes() {
     <h2><span>Categorías</span></h2><div class="card">
     ${S.categorias.map(c => `<button class="row" data-act="editar-cat" data-id="${c.id}"><span class="emoji">${esc(c.emoji)}</span><span class="grow t">${esc(c.nombre)}</span></button>`).join('')}
     <button class="row" data-act="nueva-cat"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
-    ${NATIVO ? `<h2><span>Lectura de pagos</span></h2><div class="card"><button class="row" data-act="det-permiso"><span class="grow">Leer notificaciones de pago</span><span class="badge">${NATIVO.permiso() ? 'Activada' : 'Desactivada'}</span></button></div><div class="hint">Se cambia desde los Ajustes del teléfono; tocá para abrirlos.</div>` : ''}
+    ${CON_LECTOR ? `<h2><span>Lectura de pagos</span></h2><div class="card"><button class="row" data-act="det-permiso"><span class="grow">Leer notificaciones de pago</span><span class="badge">${NATIVO.permiso() ? 'Activada' : 'Desactivada'}</span></button></div><div class="hint">Se cambia desde los Ajustes del teléfono; tocá para abrirlos.</div>` : ''}
     <h2><span>Tus datos</span></h2>
     <div class="hint">Todo queda guardado solo en este teléfono. Último respaldo: <b>${S.ultimoRespaldo ? new Date(S.ultimoRespaldo + 'T12:00').toLocaleDateString('es-AR') : 'nunca'}</b>. El respaldo no incluye las fotos de los comprobantes.</div>
     <div class="btns">

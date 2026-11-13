@@ -1,5 +1,6 @@
 package ar.gastos.app;
 
+import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
@@ -22,10 +23,21 @@ final class Puente {
 
     @JavascriptInterface
     public int version() {
-        return 1;
+        return 2;
     }
 
     // ----- notificaciones -----
+
+    /** Indica si esta variante de la app incluye la lectura de notificaciones. */
+    @JavascriptInterface
+    public boolean tieneLector() {
+        try {
+            act.getPackageManager().getServiceInfo(new ComponentName(act, "ar.gastos.app.Lector"), 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     @JavascriptInterface
     public boolean permiso() {

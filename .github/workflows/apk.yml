@@ -42,16 +42,20 @@ jobs:
           echo "LLAVE_ARCHIVO=$RUNNER_TEMP/gastos.keystore" >> "$GITHUB_ENV"
       - name: Compilar
         working-directory: android
-        run: ./gradlew --no-daemon assembleRelease -Pvc=${{ github.run_number }}
+        run: ./gradlew --no-daemon assembleBasicaRelease assembleLectorRelease -Pvc=${{ github.run_number }}
       - name: Publicar en Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk gastos.apk
+          cp android/app/build/outputs/apk/basica/release/app-basica-release.apk gastos.apk
+          cp android/app/build/outputs/apk/lector/release/app-lector-release.apk gastos-con-lector.apk
           gh release view apk >/dev/null 2>&1 || gh release create apk --title "Gastos para Android" \
-            --notes "Descargá gastos.apk desde el teléfono e instalalo." --target "$GITHUB_SHA"
-          gh release upload apk gastos.apk --clobber
+            --notes "gastos.apk: se instala directo desde el teléfono. gastos-con-lector.apk: además lee notificaciones de pago; Play Protect bloquea instalarla desde el navegador." \
+            --target "$GITHUB_SHA"
+          gh release upload apk gastos.apk gastos-con-lector.apk --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: gastos-apk
-          path: gastos.apk
+          path: |
+            gastos.apk
+            gastos-con-lector.apk

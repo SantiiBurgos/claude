@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo en la variante "lector": agrega el servicio que lee las notificaciones de pago. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Lee las notificaciones de pago. Solo funciona si el usuario lo habilita en Ajustes del teléfono. -->
+        <service
+            android:name=".Lector"
+            android:exported="true"
+            android:label="Gastos: leer pagos"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
