@@ -155,7 +155,7 @@ function filaMov(g, conFecha) {
   const cat = categoria(g.cat);
   return `<button class="row" data-act="${g.credito ? 'editar-comp' : 'editar-gasto'}" data-id="${g.id}">
     <span class="emoji">${esc(cat.emoji)}</span>
-    <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${g.img ? ' · 📎' : ''}</div></span>
+    <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${marca(cuenta(g.cuentaId), 14)}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${g.img ? ' · 📎' : ''}</div></span>
     <span class="amt num" ${g.credito ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
 }
 // Movimientos que la app Android detectó en notificaciones y todavía no confirmaste.
@@ -271,7 +271,7 @@ function vMensual() {
     const its = items.filter(x => x.c.cuentaId === cta.id);
     if (!its.length) continue;
     const enSig = sum(compsMes(sig).filter(x => x.c.cuentaId === cta.id), x => x.monto);
-    html += `<h2><span>${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card">`;
+    html += `<h2><span class="hm">${marca(cta, 24)}${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card" ${esColor(cta.color) ? `style="box-shadow:inset 4px 0 0 ${cta.color}"` : ''}>`;
     for (const x of its) {
       const ok = !!pagos[x.c.id];
       html += `<div class="row ${ok ? 'done' : ''}">
@@ -448,7 +448,7 @@ function vAjustes() {
     <div class="card"><button class="row" data-act="editar-dolar"><span class="grow">Valor en ${mesNombre(ym)}</span><span class="amt num">${dolarMes(ym) ? fmt(dolarMes(ym)) : 'Sin cargar'}</span></button></div>
     <div class="hint">Se usa para pasar a pesos lo que cargues en dólares (suscripciones). ${S.dolarAuto === false ? 'Lo cargás vos a mano.' : `Se actualiza solo con el dólar tarjeta, que ya incluye impuestos. ${S.dolarError ? '<b>No se pudo actualizar la última vez</b>; se usa el último valor guardado.' : S.dolarFecha ? `Última actualización: ${new Date(S.dolarFecha + 'T12:00').toLocaleDateString('es-AR')}.` : 'Se consulta cuando cargues algo en dólares.'}`}</div>
     <h2><span>Tarjetas y medios de pago</span></h2><div class="card">
-    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}"><span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
+    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}">${marca(c, 28)}<span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
     <button class="row" data-act="nueva-cuenta"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
     <div class="hint">Lo que cargues con un medio de <b>crédito</b> va a la pestaña Mensual. Si le ponés el día de cierre a la tarjeta, la app calcula sola en qué mes entra cada compra. Lo de <b>contado</b> cuenta como gasto del día.</div>
     <h2><span>Categorías</span></h2><div class="card">
@@ -475,7 +475,16 @@ function abrir(cfg) {
     const lab = f.label ? `<span class="lab">${esc(f.label)}</span>` : '';
     if (f.type === 'money') return `<div class="f money" data-f="${f.name}"><span>$</span><input name="${f.name}" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(f.value)}" aria-label="${esc(f.label || 'Monto')}"></div>`;
     if (f.type === 'pesos') return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="text" inputmode="numeric" data-miles autocomplete="off" placeholder="${esc(f.placeholder || '')}" value="${miles(f.value)}"></div>`;
-    if (f.type === 'chips') return `<div class="f" data-f="${f.name}">${lab}<div class="chips">${f.options.map(o => `<label class="chip"><input type="radio" name="${f.name}" value="${esc(o.v)}" ${String(o.v) === String(f.value) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div></div>`;
+    if (f.type === 'chips') return `<div class="f" data-f="${f.name}">${lab}<div class="chips">${f.options.map(o => `<label class="chip"><input type="radio" name="${f.name}" value="${esc(o.v)}" ${String(o.v) === String(f.value) ? 'checked' : ''}><span>${o.h || ''}${esc(o.l)}</span></label>`).join('')}</div></div>`;
+    if (f.type === 'color') {
+      const v = esColor(f.value) ? f.value.toLowerCase() : '', otro = v && !COLORES.includes(v);
+      return `<div class="f" data-f="${f.name}">${lab}<div class="chips colores">
+        <label class="chip"><input type="radio" name="${f.name}" value="" ${v ? '' : 'checked'}><span>Sin color</span></label>
+        ${COLORES.map(c => `<label class="chip sw"><input type="radio" name="${f.name}" value="${c}" ${c === v ? 'checked' : ''}><span style="background:${c}"></span></label>`).join('')}
+        <label class="chip sw"><input type="radio" name="${f.name}" value="otro" ${otro ? 'checked' : ''}><span class="otro" ${otro ? `style="background:${v}"` : ''}><input type="color" id="color-otro" value="${otro ? v : '#1e63d6'}" aria-label="Otro color"></span></label></div></div>`;
+    }
+    if (f.type === 'logo') return `<div class="f" data-f="${f.name}">${lab}<div class="logo-f"><img id="logo-prev" class="logo" alt="Logo" hidden>
+      <label class="attach">Elegir imagen<input type="file" id="logo-in" accept="image/*"></label><button type="button" class="attach" id="logo-quitar" data-act="logo-quitar" hidden>Quitar</button></div></div>`;
     return `<div class="f" data-f="${f.name}">${lab}<input name="${f.name}" type="${f.type === 'number' ? 'text' : f.type}" value="${esc(String(f.value ?? '').replace('.', f.type === 'number' ? ',' : '.'))}" ${f.type === 'number' ? 'inputmode="decimal"' : ''} placeholder="${esc(f.placeholder || '')}" autocomplete="off"></div>`;
   };
   $('#sheet').innerHTML = `<form id="form" novalidate>
@@ -485,6 +494,8 @@ function abrir(cfg) {
     <div class="btns"><button class="btn" type="submit">Guardar</button>
     ${cfg.onDelete ? `<button class="btn danger" type="button" data-act="eliminar">${esc(cfg.deleteLabel || 'Eliminar')}</button>` : ''}</div></form>`;
   $('#overlay').hidden = false;
+  hoja.logo = cfg.fields.find(f => f.type === 'logo')?.value || '';
+  pintarLogo();
   visibilidad();
   if (cfg.imagen) mostrarThumb(cfg.imagen);
   const primero = $('#sheet input[type=text]');
@@ -496,6 +507,8 @@ function valores() {
   for (const f of hoja.fields) {
     if (f.type === 'nota') continue;
     if (f.type === 'chips') v[f.name] = $(`#form input[name="${f.name}"]:checked`)?.value ?? '';
+    else if (f.type === 'color') { const c = $(`#form input[name="${f.name}"]:checked`)?.value ?? ''; v[f.name] = c === 'otro' ? $('#color-otro').value : c; }
+    else if (f.type === 'logo') v[f.name] = hoja.logo || '';
     else if (f.type === 'money' || f.type === 'pesos') v[f.name] = soloNum($(`#form [name="${f.name}"]`).value);
     else if (f.type === 'number') v[f.name] = Number($(`#form [name="${f.name}"]`).value.replace(',', '.')) || 0;
     else v[f.name] = $(`#form [name="${f.name}"]`).value.trim();
@@ -535,7 +548,49 @@ function mesDePago(cta, fecha) {
   return cta.vence > cta.cierre ? mesCierre : addYm(mesCierre, 1);
 }
 const primerPago = v => v.primer === 'auto' ? mesDePago(cuenta(v.cuentaId), v.fecha || hoy()) : addYm((v.fecha || hoy()).slice(0, 7), Number(v.primer));
-const opCuentas = () => S.cuentas.map(c => ({ v: c.id, l: c.nombre }));
+const opCuentas = () => S.cuentas.map(c => ({ v: c.id, l: c.nombre, h: marca(c, 18) }));
+const COLORES = ['#e53935', '#f57c00', '#f9c80e', '#2e9e4f', '#00a3c4', '#1e63d6', '#7b4bd6', '#d6418a', '#6b7280', '#111827'];
+const esColor = c => /^#[0-9a-f]{6}$/i.test(c || '');
+// Logo de la tarjeta, o un punto de su color si no tiene logo.
+function marca(c, tam = 22) {
+  if (c?.logo?.startsWith('data:image/')) return `<img class="logo" src="${c.logo}" alt="" style="width:${tam}px;height:${tam}px">`;
+  return esColor(c?.color) ? `<i class="punto" style="background:${c.color};width:${Math.round(tam * .55)}px;height:${Math.round(tam * .55)}px"></i>` : '';
+}
+// Recorta los bordes vacíos del logo, lo achica a 128 px y calcula su color predominante.
+async function procesarLogo(file) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, 400 / Math.max(bmp.width, bmp.height));
+  const a = document.createElement('canvas');
+  a.width = Math.max(1, Math.round(bmp.width * k)); a.height = Math.max(1, Math.round(bmp.height * k));
+  const ca = a.getContext('2d', { willReadFrequently: true });
+  ca.drawImage(bmp, 0, 0, a.width, a.height);
+  const px = ca.getImageData(0, 0, a.width, a.height).data;
+  let x0 = a.width, y0 = a.height, x1 = -1, y1 = -1;
+  const cuenta = new Map();
+  for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) {
+    const i = (y * a.width + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
+    if (px[i + 3] < 40) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 40) continue; // blancos, grises y negros no definen el color
+    const q = (r >> 4 << 8) | (g >> 4 << 4) | (b >> 4);
+    cuenta.set(q, (cuenta.get(q) || 0) + 1);
+  }
+  if (x1 < 0) { x0 = 0; y0 = 0; x1 = a.width - 1; y1 = a.height - 1; }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, e = Math.min(1, 128 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  c.getContext('2d').drawImage(a, x0, y0, w, h, (128 - w * e) / 2, (128 - h * e) / 2, w * e, h * e);
+  let color = '';
+  if (cuenta.size) {
+    const q = [...cuenta].sort((p, r) => r[1] - p[1])[0][0];
+    color = '#' + [q >> 8, q >> 4 & 15, q & 15].map(n => (n * 17).toString(16).padStart(2, '0')).join('');
+  }
+  return { url: c.toDataURL('image/png'), color };
+}
+function pintarLogo() {
+  const img = $('#logo-prev'); if (!img) return;
+  img.hidden = !hoja.logo; if (hoja.logo) img.src = hoja.logo;
+  $('#logo-quitar').hidden = !hoja.logo;
+}
 const esCredito = id => cuenta(id).tipo === 'credito';
 
 async function formGasto(g, extra = {}) {
@@ -645,6 +700,8 @@ function formCuenta(c) {
     fields: [
       { name: 'nombre', type: 'text', label: 'Nombre', value: c?.nombre, placeholder: 'Ej: Amex, Mercado Pago…' },
       { name: 'tipo', type: 'chips', label: 'Cómo se paga', value: c?.tipo || 'credito', options: [{ v: 'credito', l: 'Crédito (resumen mensual)' }, { v: 'contado', l: 'Contado (débito, efectivo)' }] },
+      { name: 'color', type: 'color', label: 'Color', value: c?.color },
+      { name: 'logo', type: 'logo', label: 'Logo (opcional)', value: c?.logo },
       { name: 'cierre', type: 'number', label: 'Día del mes en que cierra el resumen (opcional)', value: c?.cierre || '', placeholder: 'Ej: 25', showIf: v => v.tipo === 'credito' },
       { name: 'vence', type: 'number', label: 'Día del mes en que vence el pago (opcional)', value: c?.vence || '', placeholder: 'Ej: 10', showIf: v => v.tipo === 'credito' },
     ],
@@ -912,6 +969,7 @@ const acciones = {
       onSave: v => { if (v.que === 'app') NATIVO.bloquear(d.paquete); else NATIVO.descartar(id); },
     });
   },
+  'logo-quitar': () => { hoja.logo = ''; pintarLogo(); },
   'ir-mensual': () => { tab = 'mensual'; },
   'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
   'evo': m => { evoSel = m; },
@@ -960,6 +1018,16 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   if (e.target.id === 'importar' && e.target.files[0]) return importar(e.target.files[0]);
+  if (e.target.id === 'color-otro') { $('#form input[value="otro"]').checked = true; e.target.parentElement.style.background = e.target.value; return; }
+  if (e.target.id === 'logo-in' && e.target.files[0] && hoja) {
+    try {
+      const r = await procesarLogo(e.target.files[0]);
+      hoja.logo = r.url; pintarLogo();
+      // Si todavía no eligió color, propone el del logo.
+      if (r.color && !$('#form input[name="color"]:checked')?.value) { $('#color-otro').value = r.color; $('#color-otro').parentElement.style.background = r.color; $('#form input[value="otro"]').checked = true; }
+    } catch { toast('No pude leer esa imagen'); }
+    return;
+  }
   if (e.target.id === 'adjunto' && e.target.files[0] && hoja?.setImg) {
     const b = await achicar(e.target.files[0]); hoja.setImg(b); mostrarThumb(b); autocompletar(b); return;
   }

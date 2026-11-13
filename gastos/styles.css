@@ -162,3 +162,15 @@ td.est { color: var(--muted); }
 .vto .grow { flex: 1; }
 .x { flex: none; width: 36px; height: 36px; border-radius: 50%; color: var(--muted); font-size: 16px; }
 .aviso p.s { color: var(--muted); font-size: 13px; }
+.logo { flex: none; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px; vertical-align: middle; }
+.punto { flex: none; display: inline-block; border-radius: 50%; vertical-align: middle; }
+.hm { display: inline-flex; align-items: center; gap: 8px; }
+.chip .logo, .chip .punto, .s .logo, .s .punto { margin-right: 6px; }
+.chip span:has(.logo), .chip span:has(.punto) { display: flex; align-items: center; }
+.chip.sw span { width: 40px; height: 40px; padding: 0; border-radius: 50%; border-width: 3px; border-color: var(--bg); box-shadow: 0 0 0 1.5px var(--line); }
+.chip.sw input:checked + span { border-color: var(--bg); box-shadow: 0 0 0 3px var(--text); }
+.chip.sw .otro { overflow: hidden; background: conic-gradient(#e53935, #f9c80e, #2e9e4f, #1e63d6, #7b4bd6, #e53935); }
+.chip.sw .otro input { position: static; opacity: 0; pointer-events: auto; width: 100%; height: 100%; border: 0; padding: 0; }
+.logo-f { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.logo-f .logo { width: 56px; height: 56px; border-radius: 12px; padding: 5px; }
+.logo-f .logo[hidden] { display: none; }
