@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 14; // subir junto con el nombre del caché en sw.js
+const VERSION = 15; // subir junto con el nombre del caché en sw.js
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
 
 /* ---------- almacenamiento (IndexedDB, queda en el teléfono) ---------- */
@@ -934,7 +934,9 @@ window.nativoCompartido = async () => {
   } catch { toast('No pude abrir lo que compartiste'); }
 };
 // Al volver a la app: refresca por si se detectaron pagos nuevos.
-window.nativoVolvio = () => { if (!hoja) render(); };
+// Solo redibuja Inicio: en otras pantallas volver a dibujar reemplaza el campo de archivo justo cuando
+// Android está por entregarle el archivo elegido, y la carga se pierde sin aviso.
+window.nativoVolvio = () => { if (!hoja && tab === 'inicio') render(); };
 // Botón Atrás de Android: cierra el formulario o vuelve a Inicio. Devuelve false si no había nada que cerrar.
 window.atras = () => {
   if (hoja) { cerrar(); return true; }
