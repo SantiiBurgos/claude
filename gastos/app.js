@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 19; // subir junto con el nombre del caché en sw.js
+const VERSION = 20; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -122,6 +122,8 @@ const totalComps = m => sum(compsMes(m), x => x.monto);
 const totalIngresos = m => sum(ingresosMes(m), x => x.monto);
 // Lo pagado con un medio "ajeno" (ej. la tarjeta de comida del trabajo) se anota pero no cuenta como gasto propio.
 const propio = g => (S.cuentas.find(c => c.id === g.cuentaId) || {}).tipo !== 'ajeno';
+// Plata que salió de tu bolsillo hacia otros en el mes (prestado menos devuelto). Negativo si te devolvieron más.
+const prestadoNeto = m => sum(S.deudores || [], p => sum(p.movs.filter(x => x.fecha.startsWith(m)), x => x.monto));
 const totalGastos = m => sum(gastosMes(m).filter(propio), g => g.monto);
 const cuenta = id => S.cuentas.find(c => c.id === id) || { id, nombre: 'Sin cuenta', tipo: 'contado' };
 const categoria = id => S.categorias.find(c => c.id === id) || { id, nombre: 'Otros', emoji: '📦' };
@@ -204,7 +206,7 @@ function vencimientos() {
 
 function vInicio() {
   const ing = totalIngresos(ym), comp = totalComps(ym), gas = totalGastos(ym);
-  const queda = ing - comp - gas;
+  const pres = prestadoNeto(ym), queda = ing - comp - gas - pres;
   const gs = [...gastosMes(ym), ...comprasCredito().filter(g => g.fecha.startsWith(ym))].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   let presu = '';
   if (S.presupuesto > 0) {
@@ -239,7 +241,7 @@ function vInicio() {
   return `${aviso}${venc}${ym === hoy().slice(0, 7) ? vDetectados() : ''}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
-      <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}</div>
+      <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}${pres ? ` · ${pres > 0 ? 'Prestado sin devolver' : 'Te devolvieron'} ${fmt(Math.abs(pres))}` : ''}</div>
     </section>${rep}${presu}${lista}${buscar}`;
 }
 
@@ -312,7 +314,8 @@ function vResumen() {
     <div class="row"><span class="grow">Ingresos</span><span class="amt num">${fmt(ing)}</span></div>
     <div class="row"><span class="grow">Fijos y cuotas</span><span class="amt num">${fmt(-comp)}</span></div>
     <div class="row"><span class="grow">Gastos del día a día</span><span class="amt num">${fmt(-gas)}</span></div>
-    <div class="row total"><span class="grow">Te queda</span><span class="amt num" ${ing - comp - gas < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(ing - comp - gas)}</span></div></div>`;
+    ${prestadoNeto(ym) ? `<div class="row"><span class="grow">${prestadoNeto(ym) > 0 ? 'Prestado o pagado por otros, sin devolver' : 'Te devolvieron préstamos'}</span><span class="amt num">${fmt(-prestadoNeto(ym))}</span></div>` : ''}
+    <div class="row total"><span class="grow">Te queda</span><span class="amt num" ${ing - comp - gas - prestadoNeto(ym) < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(ing - comp - gas - prestadoNeto(ym))}</span></div></div>`;
 
   const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id && propio(g)), g => g.monto) })).filter(x => x.t > 0 || x.c.tope > 0).sort((a, b) => b.t - a.t);
   if (porCat.length) {
@@ -348,12 +351,18 @@ function gastoRef() {
   for (let i = 1; i <= 3; i++) { const t = totalGastos(addYm(act, -i)); if (t > 0) pasados.push(t); }
   if (pasados.length) return { monto: Math.round(sum(pasados, x => x) / pasados.length), fuente: pasados.length === 1 ? 'lo que gastaste el mes pasado' : `promedio real de ${pasados.length} meses` };
   const dia = Number(hoy().slice(8)), t = totalGastos(act), dias = new Date(Number(act.slice(0, 4)), Number(act.slice(5)), 0).getDate();
-  if (dia >= 7 && t > 0) return { monto: Math.round(t / dia * dias), fuente: 'ritmo de este mes' };
+  if (dia >= 7 && t > 0) {
+    // Proyecta el resto del mes con el ritmo de los gastos comunes; los gastos grandes y excepcionales
+    // (una veterinaria, un viaje) cuentan una sola vez y no se multiplican por los días que faltan.
+    const montos = gastosMes(act).filter(propio).map(g => g.monto).sort((a, b) => a - b), mediana = montos[Math.floor(montos.length / 2)];
+    const comunes = sum(montos.filter(x => x <= mediana * 5), x => x);
+    return { monto: Math.round(t + comunes / dia * (dias - dia)), fuente: 'ritmo de este mes' };
+  }
   return { monto: S.presupuesto, fuente: 'tu tope' };
 }
 function ahorroEstimado(m) {
   const ref = gastoRef().monto, variables = m === hoy().slice(0, 7) ? Math.max(ref, totalGastos(m)) : ref;
-  return totalIngresos(m) - totalComps(m) - variables;
+  return totalIngresos(m) - totalComps(m) - variables - prestadoNeto(m);
 }
 
 /* ---------- simulador de ahorro ---------- */
@@ -488,7 +497,7 @@ function vPlan() {
   html += `<h2><span>Me deben</span><span class="num">${fmt(sum(dd, saldoDeudor))}</span></h2><div class="card">
     ${dd.map(p => `<button class="row" data-act="ver-deudor" data-id="${p.id}"><span class="grow"><div class="t">${esc(p.nombre)}</div><div class="s">${p.movs.length} ${p.movs.length === 1 ? 'movimiento' : 'movimientos'}</div></span><span class="amt num">${saldoDeudor(p) === 0 ? 'Saldado' : fmt(saldoDeudor(p))}</span></button>`).join('')}
     <button class="row" data-act="nuevo-deudor"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar persona</span></button></div>
-    <div class="hint">Para préstamos y pagos que hacés por otros. Es una cuenta aparte: no cambia tus gastos ni lo que te queda del mes.</div>`;
+    <div class="hint">Para préstamos y pagos que hacés por otros. No cuenta como gasto, pero lo que prestás baja lo que te queda ese mes y vuelve a subir cuando te lo devuelven.</div>`;
 
   const ds = deudas(ym);
   html += `<h2><span>Deudas en cuotas</span><span class="num">${fmt(sum(ds, d => d.saldo))}</span></h2>`;
