@@ -487,10 +487,10 @@ function vPlan() {
   const ref = gastoRef();
   html += `<h2><span>Próximos meses</span></h2><div class="card pad"><table><tr><th>Mes</th><th>Ingresos</th><th>A pagar</th><th>Queda</th></tr>`;
   for (let i = 0; i < 6; i++) {
-    const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = a - b - ref.monto;
+    const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = ahorroEstimado(m);
     html += `<tr><td>${mesCorto(m)}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num ${q < 0 ? 'neg' : ''}"><b>${fmt(q)}</b></td></tr>`;
   }
-  html += `</table><div class="hint">"Queda" descuenta también el gasto del día a día: ${fmt(ref.monto)} por mes (${ref.fuente}).</div></div>`;
+  html += `</table><div class="hint">"Queda" descuenta también el gasto del día a día, unos ${fmt(ref.monto)} por mes (${ref.fuente}), y lo que tengas prestado sin devolver.</div></div>`;
 
 
   const dd = S.deudores || [];
