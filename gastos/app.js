@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 16; // subir junto con el nombre del caché en sw.js
+const VERSION = 17; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -70,6 +70,7 @@ const inicial = () => ({
   pagos: {},       // { 'AAAA-MM': { idCompromiso: true } }
   presupuesto: 0,  // tope mensual para gastos del día a día
   meta: null,      // { nombre, total, minimo }
+  deudores: [],    // plata que te deben: [{ id, nombre, movs: [{ id, fecha, monto, nota }] }] (monto + te deben más, − te devolvieron)
   ahorros: {},     // { 'AAAA-MM': lo que se guardó de verdad ese mes }
   dolares: {},     // { 'AAAA-MM': cotización } — vale desde ese mes hasta que se cargue otra
 });
@@ -77,6 +78,7 @@ const inicial = () => ({
 let S = inicial();
 let ym = hoy().slice(0, 7);
 let tab = 'inicio';
+let deudorSel = null; // persona abierta en "Me deben"
 let evoSel = null; // mes elegido en el gráfico de evolución
 const guardar = () => db.set('estado', S).catch(() => toast('No se pudo guardar'));
 
@@ -135,8 +137,8 @@ function deudaDesde(m) {
 function render() {
   const actual = ym === hoy().slice(0, 7);
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
-  for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === tab);
-  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar })[tab]();
+  for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === (tab === 'deudor' ? 'plan' : tab));
+  $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar, deudor: vDeudor })[tab]();
 }
 
 // Gastos que se repiten (mismo detalle, categoría y medio), para cargarlos en un toque.
@@ -407,6 +409,12 @@ function vPlan() {
   html += `</table><div class="hint">"Queda" descuenta también el tope de gastos del día a día${S.presupuesto ? ` (${fmt(S.presupuesto)})` : ''}.</div></div>`;
 
 
+  const dd = S.deudores || [];
+  html += `<h2><span>Me deben</span><span class="num">${fmt(sum(dd, saldoDeudor))}</span></h2><div class="card">
+    ${dd.map(p => `<button class="row" data-act="ver-deudor" data-id="${p.id}"><span class="grow"><div class="t">${esc(p.nombre)}</div><div class="s">${p.movs.length} ${p.movs.length === 1 ? 'movimiento' : 'movimientos'}</div></span><span class="amt num">${saldoDeudor(p) === 0 ? 'Saldado' : fmt(saldoDeudor(p))}</span></button>`).join('')}
+    <button class="row" data-act="nuevo-deudor"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar persona</span></button></div>
+    <div class="hint">Para préstamos y pagos que hacés por otros. Es una cuenta aparte: no cambia tus gastos ni lo que te queda del mes.</div>`;
+
   const ds = deudas(ym);
   html += `<h2><span>Deudas en cuotas</span><span class="num">${fmt(sum(ds, d => d.saldo))}</span></h2>`;
   if (ds.length) {
@@ -418,6 +426,58 @@ function vPlan() {
   return html;
 }
 
+const saldoDeudor = p => sum(p.movs, m => m.monto);
+function vDeudor() {
+  const p = (S.deudores || []).find(x => x.id === deudorSel);
+  if (!p) { tab = 'plan'; return vPlan(); }
+  const saldo = saldoDeudor(p), movs = [...p.movs].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
+  const debe = sum(p.movs.filter(m => m.monto > 0), m => m.monto), dio = -sum(p.movs.filter(m => m.monto < 0), m => m.monto);
+  return `<button class="btn ghost" data-act="ir-plan" style="margin-bottom:6px">‹ Volver a Plan</button>
+    <section class="hero">
+      <div class="lbl">${esc(p.nombre)} ${saldo < 0 ? 'te dio de más' : 'te debe'}</div>
+      <div class="big num">${fmt(Math.abs(saldo))}</div>
+      <div class="sub">Le prestaste o pagaste ${fmt(debe)} · Te devolvió ${fmt(dio)}</div>
+    </section>
+    <div class="btns" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+      <button class="btn ghost" data-act="mov-deudor" data-id="1">+ Me debe más</button>
+      <button class="btn" data-act="mov-deudor" data-id="-1">+ Me devolvió</button>
+    </div>
+    ${movs.length ? `<div class="card">${movs.map(m => `<button class="row" data-act="editar-mov-deudor" data-id="${m.id}">
+      <span class="grow"><div class="t">${esc(m.nota || (m.monto > 0 ? 'Le presté / pagué por él' : 'Me devolvió'))}</div><div class="s">${etiquetaDia(m.fecha)}</div></span>
+      <span class="amt num" ${m.monto < 0 ? 'style="color:var(--accent)"' : ''}>${m.monto < 0 ? '−' : '+'} ${fmt(Math.abs(m.monto))}</span></button>`).join('')}</div>` : '<div class="empty">Todavía no hay movimientos.</div>'}
+    <button class="btn line" data-act="editar-deudor">Cambiar nombre o eliminar</button>`;
+}
+function formDeudor(p) {
+  abrir({
+    title: p ? 'Editar persona' : 'Quién te debe',
+    fields: [{ name: 'nombre', type: 'text', label: 'Nombre', value: p?.nombre, placeholder: 'Ej: papás' }],
+    onSave: v => {
+      if (!v.nombre) return 'Ponele un nombre';
+      if (p) p.nombre = v.nombre;
+      else { const n = { id: uid(), nombre: v.nombre, movs: [] }; (S.deudores ??= []).push(n); deudorSel = n.id; tab = 'deudor'; }
+    },
+    deleteLabel: 'Eliminar persona y sus movimientos',
+    onDelete: p ? () => { S.deudores = S.deudores.filter(x => x.id !== p.id); tab = 'plan'; } : null,
+  });
+}
+function formMovDeudor(m, signo) {
+  const p = S.deudores.find(x => x.id === deudorSel);
+  abrir({
+    title: m ? 'Editar movimiento' : (signo > 0 ? 'Me debe más' : 'Me devolvió'),
+    fields: [
+      { name: 'monto', type: 'money', value: m ? Math.abs(m.monto) : 0 },
+      { name: 'tipo', type: 'chips', value: m ? (m.monto > 0 ? '1' : '-1') : String(signo), options: [{ v: '1', l: 'Le presté o pagué por él' }, { v: '-1', l: 'Me devolvió' }] },
+      { name: 'nota', type: 'text', label: 'Detalle (opcional)', value: m?.nota, placeholder: 'Ej: préstamo, cuota Visa…' },
+      { name: 'fecha', type: 'date', label: 'Fecha', value: m?.fecha || hoy() },
+    ],
+    onSave: v => {
+      if (!v.monto) return 'Poné un monto';
+      const n = { id: m?.id || uid(), fecha: v.fecha || hoy(), monto: v.monto * Number(v.tipo), nota: v.nota };
+      if (m) p.movs[p.movs.findIndex(x => x.id === m.id)] = n; else p.movs.push(n);
+    },
+    onDelete: m ? () => { p.movs = p.movs.filter(x => x.id !== m.id); } : null,
+  });
+}
 function formMeta() {
   const M = S.meta;
   abrir({
@@ -965,6 +1025,7 @@ window.nativoVolvio = () => { if (!hoja && tab === 'inicio') render(); };
 // Botón Atrás de Android: cierra el formulario o vuelve a Inicio. Devuelve false si no había nada que cerrar.
 window.atras = () => {
   if (hoja) { cerrar(); return true; }
+  if (tab === 'deudor') { tab = 'plan'; render(); return true; }
   if (tab !== 'inicio') { tab = 'inicio'; render(); return true; }
   return false;
 };
@@ -1019,6 +1080,12 @@ const acciones = {
   'editar-dolar': () => formDolar(),
   'actualizar': actualizarApp,
   'editar-meta': () => formMeta(),
+  'nuevo-deudor': () => formDeudor(),
+  'ver-deudor': id => { deudorSel = id; tab = 'deudor'; window.scrollTo(0, 0); },
+  'editar-deudor': () => formDeudor(S.deudores.find(x => x.id === deudorSel)),
+  'mov-deudor': signo => formMovDeudor(null, Number(signo)),
+  'editar-mov-deudor': id => formMovDeudor(S.deudores.find(x => x.id === deudorSel).movs.find(m => m.id === id)),
+  'ir-plan': () => { tab = 'plan'; },
   'editar-ahorro': m => formAhorro(m),
   'exportar': () => respaldar(true),
   'respaldar': () => respaldar(false),
