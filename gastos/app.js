@@ -18,6 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
+const VERSION = 14; // subir junto con el nombre del caché en sw.js
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
 
 /* ---------- almacenamiento (IndexedDB, queda en el teléfono) ---------- */
@@ -465,7 +466,8 @@ function vAjustes() {
       <label class="btn ghost">Cargar respaldo<input type="file" id="importar" ${NATIVO ? '' : 'accept="application/json,text/plain,.json,.txt"'} hidden></label>
       <button class="btn ghost" data-act="csv">Exportar gastos a planilla (CSV)</button>
       <button class="btn danger" data-act="borrar-todo">Borrar todo</button>
-    </div>`;
+    </div>
+    <div class="hint" style="text-align:center">Versión ${VERSION}${NATIVO ? ' · app Android' : ''}</div>`;
 }
 
 /* ---------- formularios (hoja inferior) ---------- */
@@ -1055,7 +1057,17 @@ document.addEventListener('change', async e => {
   actualizarDolar();
   // Baja en segundo plano lo necesario para leer comprobantes, así después funciona sin conexión.
   setTimeout(() => { if (navigator.onLine) for (const f of ['tesseract.min.js', 'worker.min.js', 'spa.traineddata.gz', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'pdf.min.mjs', 'pdf.worker.min.mjs']) fetch('ocr/' + f).catch(() => {}); }, 6000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // Cuando se instala una versión nueva, recarga sola (salvo que haya un formulario abierto) para no quedar con la vieja.
+    const habia = !!navigator.serviceWorker.controller;
+    let recargada = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!habia || recargada) return;
+      recargada = true;
+      if (hoja) toast('Hay una versión nueva: cerrá y abrí la app para verla'); else location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   const p = new URLSearchParams(location.search);
   if (p.has('compartido')) { history.replaceState(null, '', './'); levantarCompartido(); }
   else if (p.has('nuevo')) { history.replaceState(null, '', './'); formGasto(); }

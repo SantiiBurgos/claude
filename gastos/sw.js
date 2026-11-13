@@ -1,8 +1,8 @@
-const CACHE = 'gastos-v13';
+const CACHE = 'gastos-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -36,7 +36,7 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.open(CACHE).then(async c => {
       const hit = await c.match(e.request, { ignoreSearch: true });
-      const red = fetch(e.request).then(r => { if (r.ok) c.put(e.request.url.split('?')[0], r.clone()); return r; }).catch(() => hit);
+      const red = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request.url.split('?')[0], r.clone()); return r; }).catch(() => hit);
       return hit || red;
     })
   );
