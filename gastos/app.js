@@ -462,7 +462,7 @@ function vAjustes() {
     <div class="btns">
       <button class="btn" data-act="respaldar">Guardar respaldo (Drive, WhatsApp, mail…)</button>
       <button class="btn ghost" data-act="exportar">Descargar respaldo al teléfono</button>
-      <label class="btn ghost">Cargar respaldo<input type="file" id="importar" accept="application/json,text/plain,.json,.txt" hidden></label>
+      <label class="btn ghost">Cargar respaldo<input type="file" id="importar" ${NATIVO ? '' : 'accept="application/json,text/plain,.json,.txt"'} hidden></label>
       <button class="btn ghost" data-act="csv">Exportar gastos a planilla (CSV)</button>
       <button class="btn danger" data-act="borrar-todo">Borrar todo</button>
     </div>`;
@@ -492,8 +492,8 @@ function abrir(cfg) {
   $('#sheet').innerHTML = `<form id="form" novalidate>
     <div class="sheet-head"><h3>${esc(cfg.title)}</h3><button type="button" data-act="cerrar" aria-label="Cerrar">✕</button></div>
     ${cfg.fields.map(campo).join('')}
-    ${cfg.adjunto ? `<div class="f">${cfg.setImg ? '<label class="attach">📎 Adjuntar comprobante<input type="file" id="adjunto" accept="image/*,application/pdf"></label>' : ''}<img class="thumb" id="thumb" hidden alt="Comprobante"> <a class="attach" id="pdf" hidden target="_blank" rel="noopener">📄 Ver comprobante (PDF)</a></div>` : ''}
-    <div class="btns"><button class="btn" type="submit">Guardar</button>
+    ${cfg.adjunto ? `<div class="f">${cfg.setImg ? '<label class="attach">📎 Adjuntar comprobante<input type="file" id="adjunto" ' + (NATIVO ? '' : 'accept="image/*,application/pdf"') + '></label>' : ''}<img class="thumb" id="thumb" hidden alt="Comprobante"> <a class="attach" id="pdf" hidden target="_blank" rel="noopener">📄 Ver comprobante (PDF)</a></div>` : ''}
+    <div class="btns"><button class="btn" type="submit">${esc(cfg.okLabel || 'Guardar')}</button>
     ${cfg.onDelete ? `<button class="btn danger" type="button" data-act="eliminar">${esc(cfg.deleteLabel || 'Eliminar')}</button>` : ''}</div></form>`;
   $('#overlay').hidden = false;
   hoja.logo = cfg.fields.find(f => f.type === 'logo')?.value || '';
@@ -798,14 +798,20 @@ function exportarCsv() {
   for (const x of ingresosMes(ym)) filas.push([ym, 'Ingreso', x.c.nombre, '', '', '', x.monto]);
   descargar(`gastos-${ym}.csv`, '﻿' + filas.map(f => f.map(q).join(',')).join('\n'), 'text/csv');
 }
+// Pide confirmación con una hoja propia (los diálogos del sistema no son confiables dentro de la app Android).
+function confirmar(titulo, texto, boton, alAceptar) {
+  abrir({ title: titulo, foco: false, okLabel: boton, fields: [{ name: 'aviso', type: 'nota', texto: () => texto }], onSave: alAceptar });
+}
 async function importar(file) {
+  let d;
   try {
-    const d = JSON.parse(await file.text());
+    d = JSON.parse(await file.text());
     if (!Array.isArray(d.cuentas) || !Array.isArray(d.compromisos) || !Array.isArray(d.gastos)) throw 0;
-    if (!confirm('Esto reemplaza todo lo que hay cargado en la app por el contenido del respaldo. ¿Seguimos?')) return;
+  } catch { return toast('Ese archivo no es un respaldo válido'); }
+  confirmar('Cargar respaldo', `El respaldo tiene ${d.gastos.length} gastos, ${d.compromisos.length} cuotas o fijos y ${(d.ingresos || []).length} ingresos. Reemplaza todo lo que hay cargado ahora en la app.`, 'Reemplazar todo', () => {
     S = { ...inicial(), ...d, ultimoRespaldo: hoy() };
-    await guardar(); render(); toast('Respaldo cargado');
-  } catch { toast('Ese archivo no es un respaldo válido'); }
+    toast('Respaldo cargado');
+  });
 }
 
 /* ---------- lectura del comprobante (OCR, corre en el teléfono) ---------- */
@@ -988,7 +994,7 @@ const acciones = {
   'respaldar': () => respaldar(false),
   'repetir': id => { const g = S.gastos.find(x => x.id === id); return formGasto(null, { monto: g.monto, desc: g.desc, cat: g.cat, cuentaId: g.cuentaId }); },
   'csv': exportarCsv,
-  'borrar-todo': () => { if (confirm('¿Borrar TODOS los datos de la app? No se puede deshacer.')) { S = inicial(); guardar(); } },
+  'borrar-todo': () => confirmar('Borrar todo', 'Se borran TODOS los datos de la app. No se puede deshacer.', 'Borrar todo', () => { S = inicial(); toast('Datos borrados'); }),
   'cerrar': cerrar,
   'eliminar': async () => {
     const err = await hoja.onDelete();
@@ -1019,7 +1025,7 @@ document.addEventListener('input', e => {
   if (e.target.closest('.f.money') || e.target.dataset.miles != null) e.target.value = miles(soloNum(e.target.value));
 });
 document.addEventListener('change', async e => {
-  if (e.target.id === 'importar' && e.target.files[0]) return importar(e.target.files[0]);
+  if (e.target.id === 'importar' && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; return importar(f); }
   if (e.target.id === 'color-otro') { $('#form input[value="otro"]').checked = true; e.target.parentElement.style.background = e.target.value; return; }
   if (e.target.id === 'logo-in' && e.target.files[0] && hoja) {
     try {
@@ -1031,7 +1037,9 @@ document.addEventListener('change', async e => {
     return;
   }
   if (e.target.id === 'adjunto' && e.target.files[0] && hoja?.setImg) {
-    const b = await achicar(e.target.files[0]); hoja.setImg(b); mostrarThumb(b); autocompletar(b); return;
+    const f = e.target.files[0];
+    if (!f.type.startsWith('image/') && f.type !== 'application/pdf') { toast('Elegí una foto o un PDF'); return; }
+    const b = await achicar(f); hoja.setImg(b); mostrarThumb(b); autocompletar(b); return;
   }
   if (e.target.id === 'f-cat' || e.target.id === 'f-cta') { filtro[e.target.id.slice(2)] = e.target.value; $('#res').innerHTML = resultados(); return; }
   if (hoja && e.target.closest('#form')) visibilidad();

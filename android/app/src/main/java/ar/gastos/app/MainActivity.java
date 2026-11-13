@@ -107,11 +107,16 @@ public class MainActivity extends Activity {
         List<String> tipos = new ArrayList<>();
         boolean cualquiera = false;
         if (acepta != null) {
-            for (String a : acepta) {
-                if (a == null || !a.contains("/")) continue;
-                // Los respaldos .json suelen venir con un tipo genérico: mejor dejar elegir cualquier archivo.
-                if (a.equals("application/json")) cualquiera = true;
-                tipos.add(a);
+            for (String lista : acepta) {
+                if (lista == null) continue;
+                // Según la versión de WebView, los tipos pueden venir separados o todos juntos con comas.
+                for (String a : lista.split(",")) {
+                    a = a.trim();
+                    if (!a.contains("/")) continue;
+                    // Los respaldos .json suelen venir con un tipo genérico: mejor dejar elegir cualquier archivo.
+                    if (a.equals("application/json")) cualquiera = true;
+                    tipos.add(a);
+                }
             }
         }
         Intent i = new Intent(Intent.ACTION_GET_CONTENT);
