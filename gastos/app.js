@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 18; // subir junto con el nombre del caché en sw.js
+const VERSION = 19; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -141,6 +141,7 @@ function render() {
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
   for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === (tab === 'deudor' ? 'plan' : tab));
   $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar, deudor: vDeudor })[tab]();
+  if (tab === 'plan') actualizarDolarAhorro();
 }
 
 // Gastos que se repiten (mismo detalle, categoría y medio), para cargarlos en un toque.
@@ -341,9 +342,79 @@ function vResumen() {
 
 /* ---------- plan: meta de ahorro, próximos meses y deudas ---------- */
 // Lo que se proyecta ahorrar en un mes: ingresos menos compromisos y gastos del día a día.
+// Cuánto gastás por mes en el día a día, según lo que de verdad anotaste; si todavía no hay datos, el tope.
+function gastoRef() {
+  const act = hoy().slice(0, 7), pasados = [];
+  for (let i = 1; i <= 3; i++) { const t = totalGastos(addYm(act, -i)); if (t > 0) pasados.push(t); }
+  if (pasados.length) return { monto: Math.round(sum(pasados, x => x) / pasados.length), fuente: pasados.length === 1 ? 'lo que gastaste el mes pasado' : `promedio real de ${pasados.length} meses` };
+  const dia = Number(hoy().slice(8)), t = totalGastos(act), dias = new Date(Number(act.slice(0, 4)), Number(act.slice(5)), 0).getDate();
+  if (dia >= 7 && t > 0) return { monto: Math.round(t / dia * dias), fuente: 'ritmo de este mes' };
+  return { monto: S.presupuesto, fuente: 'tu tope' };
+}
 function ahorroEstimado(m) {
-  const variables = m === hoy().slice(0, 7) ? Math.max(S.presupuesto, totalGastos(m)) : S.presupuesto;
+  const ref = gastoRef().monto, variables = m === hoy().slice(0, 7) ? Math.max(ref, totalGastos(m)) : ref;
   return totalIngresos(m) - totalComps(m) - variables;
+}
+
+/* ---------- simulador de ahorro ---------- */
+const dolarAhorro = () => S.dolarAhorro?.valor || 0;
+// Trae el dólar MEP (el que se usa para comprar dólares y ahorrar), como mucho una vez por día.
+async function actualizarDolarAhorro(forzar) {
+  const d = S.dolarAhorro ??= {};
+  if (d.manual || (!forzar && d.fecha === hoy())) return;
+  try {
+    const r = await fetch('https://dolarapi.com/v1/dolares/bolsa', { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+    const v = Math.round(Number((await r.json()).venta));
+    if (!r.ok || !(v > 0)) throw 0;
+    d.valor = v; d.fecha = hoy(); d.error = false;
+    await guardar();
+  } catch { d.error = true; }
+  if (tab === 'plan' && !hoja && $('#sim-res')) $('#sim-res').innerHTML = simResultado(S.sim?.pct ?? 30);
+}
+function vSim() {
+  const pct = S.sim?.pct ?? 30;
+  return `<h2><span>Simulador de ahorro</span></h2><div class="card pad">
+    <div class="kv"><span>Ahorrar de lo que te queda libre</span><span class="num"><b id="sim-pct" style="font-size:18px">${pct}%</b></span></div>
+    <input type="range" id="sim" min="0" max="100" step="5" value="${pct}" aria-label="Porcentaje a ahorrar por mes">
+    <div id="sim-res">${simResultado(pct)}</div></div>`;
+}
+function simResultado(pct) {
+  const act = hoy().slice(0, 7), desde = ym < act ? act : ym, d = dolarAhorro(), ref = gastoRef(), M = S.meta;
+  const usd = n => d ? 'US$ ' + Math.round(n / d).toLocaleString('es-AR') : '—';
+  let acum = ahorradoHasta(addYm(desde, -1)), filas = '', mMin = null, mTot = null, primero = null;
+  for (let i = 0; i < 24; i++) {
+    const m = addYm(desde, i), libre = Math.max(0, totalIngresos(m) - totalComps(m)), a = Math.round(libre * pct / 100);
+    acum += a;
+    if (i === 0) primero = { libre, a };
+    if (M?.minimo && !mMin && acum >= M.minimo) mMin = m;
+    if (M && !mTot && acum >= M.total) mTot = m;
+    if (i < 6) filas += `<tr><td>${mesCorto(m)}</td><td class="num">${fmt(a)}</td><td class="num"><b>${fmt(acum)}</b></td><td class="num">${usd(acum)}</td></tr>`;
+  }
+  if (!primero.libre) return `<div class="hint">Cargá tu sueldo en Resumen para poder simular.</div>`;
+  const vivir = primero.libre - primero.a, dias = new Date(Number(desde.slice(0, 4)), Number(desde.slice(5)), 0).getDate();
+  const falta = ref.monto - vivir;
+  return `<div class="kv"><span>Ahorrás (${mesNombre(desde).slice(0, 3)})</span><span class="num"><b>${fmt(primero.a)}</b>${d ? ' · ' + usd(primero.a) : ''}</span></div>
+    <div class="kv"><span>Para vivir</span><span class="num">${fmt(vivir)} · ${fmt(vivir / dias)} por día</span></div>
+    <div class="hint">${ref.monto ? (falta > 0 ? `⚠ Hoy gastás unos ${fmt(ref.monto)} por mes (${ref.fuente}): tendrías que bajar ${fmt(falta)}.` : `Entra en lo que gastás hoy: unos ${fmt(ref.monto)} por mes (${ref.fuente}).`) : 'Cuando anotes gastos, acá te digo si este plan entra en lo que gastás.'}</div>
+    <table><tr><th>Mes</th><th>Ahorrás</th><th>Acumulado</th><th>En dólares</th></tr>${filas}</table>
+    ${M ? `<div class="hint">${M.minimo ? `Mínimo de ${fmt(M.minimo)}: ${mMin ? mesCorto(mMin) : 'más de 2 años'}. ` : ''}Meta de ${fmt(M.total)}: ${mTot ? mesCorto(mTot) : 'más de 2 años'}.</div>` : ''}
+    <button class="row" data-act="editar-dolar-ahorro" style="border-top:1px solid var(--line)"><span class="grow s">Dólar para ahorrar${S.dolarAhorro?.manual ? ' (lo cargás vos)' : ' (MEP)'}</span><span class="num s">${d ? fmt(d) : S.dolarAhorro?.error ? 'No se pudo traer' : 'Buscando…'}</span></button>
+    <div class="hint">"Libre" es tu ingreso menos los fijos y cuotas de cada mes. Suma lo que ya anotaste como guardado. El dólar se toma al valor de hoy para todos los meses.</div>`;
+}
+function formDolarAhorro() {
+  abrir({
+    title: 'Dólar para ahorrar', foco: false,
+    fields: [
+      { name: 'modo', type: 'chips', value: S.dolarAhorro?.manual ? 'manual' : 'auto', options: [{ v: 'auto', l: 'Automático (dólar MEP)' }, { v: 'manual', l: 'Lo cargo yo' }] },
+      { name: 'valor', type: 'money', value: dolarAhorro(), showIf: v => v.modo === 'manual' },
+    ],
+    onSave: async v => {
+      const d = S.dolarAhorro ??= {};
+      d.manual = v.modo === 'manual';
+      if (d.manual) { if (!v.valor) return 'Poné un valor'; d.valor = v.valor; d.error = false; }
+      else { await actualizarDolarAhorro(true); if (d.error) toast('No pude traer la cotización ahora'); }
+    },
+  });
 }
 const ahorroReal = m => (S.ahorros || {})[m];
 // Ahorrado de verdad hasta el mes m inclusive.
@@ -403,12 +474,14 @@ function vPlan() {
     html += `</table><div class="hint">Tocá "Guardado" para anotar lo que apartaste de verdad ese mes. El acumulado en gris usa el estimado.</div></div>`;
   }
 
+  html += vSim();
+  const ref = gastoRef();
   html += `<h2><span>Próximos meses</span></h2><div class="card pad"><table><tr><th>Mes</th><th>Ingresos</th><th>A pagar</th><th>Queda</th></tr>`;
   for (let i = 0; i < 6; i++) {
-    const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = a - b - S.presupuesto;
+    const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = a - b - ref.monto;
     html += `<tr><td>${mesCorto(m)}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num ${q < 0 ? 'neg' : ''}"><b>${fmt(q)}</b></td></tr>`;
   }
-  html += `</table><div class="hint">"Queda" descuenta también el tope de gastos del día a día${S.presupuesto ? ` (${fmt(S.presupuesto)})` : ''}.</div></div>`;
+  html += `</table><div class="hint">"Queda" descuenta también el gasto del día a día: ${fmt(ref.monto)} por mes (${ref.fuente}).</div></div>`;
 
 
   const dd = S.deudores || [];
@@ -1080,6 +1153,7 @@ const acciones = {
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
   'editar-dolar': () => formDolar(),
+  'editar-dolar-ahorro': () => formDolarAhorro(),
   'actualizar': actualizarApp,
   'editar-meta': () => formMeta(),
   'nuevo-deudor': () => formDeudor(),
@@ -1120,11 +1194,13 @@ document.addEventListener('submit', async e => {
   await guardar(); cerrar(); render();
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'sim') { const p = Number(e.target.value); S.sim = { pct: p }; $('#sim-pct').textContent = p + '%'; $('#sim-res').innerHTML = simResultado(p); return; }
   if (e.target.id === 'q') { filtro.q = e.target.value; $('#res').innerHTML = resultados(); return; }
   if (e.target.closest('.f.money') || e.target.dataset.miles != null) e.target.value = miles(soloNum(e.target.value));
 });
 document.addEventListener('change', async e => {
   if (e.target.id === 'importar' && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; return importar(f); }
+  if (e.target.id === 'sim') { guardar(); return; }
   if (e.target.id === 'color-otro') { $('#form input[value="otro"]').checked = true; e.target.parentElement.style.background = e.target.value; return; }
   if (e.target.id === 'logo-in' && e.target.files[0] && hoja) {
     try {
