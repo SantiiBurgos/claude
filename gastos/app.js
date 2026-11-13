@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 22; // subir junto con el nombre del caché en sw.js
+const VERSION = 23; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -292,6 +292,16 @@ function vMensual() {
       <div class="big num">${fmt(total)}</div>
       <div class="sub">${ing ? Math.round(total / ing * 100) + '% de tus ingresos · ' : ''}Pagado ${fmt(pagado)} · Falta ${fmt(total - pagado)}</div>
     </section>`;
+  if (ing) {
+    // Lo que queda después de los fijos, y lo que queda si además se aparta el ahorro del simulador.
+    const libre = ing - total, pct = S.sim?.pct ?? 30, ahorro = Math.round(Math.max(0, libre) * pct / 100), conAhorro = libre - ahorro;
+    const dias = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate();
+    html += `<div class="card">
+      <div class="row"><span class="grow">Ingresos de ${mesNombre(ym)}</span><span class="amt num">${fmt(ing)}</span></div>
+      <div class="row total"><span class="grow">Disponible después de los fijos</span><span class="amt num" ${libre < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(libre)}</span></div>
+      <button class="row" data-act="ir-plan"><span class="grow"><div class="t">Ahorro (${pct}%)</div><div class="s">Se cambia en Plan → Simulador</div></span><span class="amt num">${fmt(-ahorro)}</span></button>
+      <div class="row total"><span class="grow"><div class="t">Disponible si ahorrás</div><div class="s" style="font-weight:400">${fmt(conAhorro / dias)} por día</div></span><span class="amt num" ${conAhorro < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(conAhorro)}</span></div></div>`;
+  }
   for (const cta of S.cuentas) {
     const its = items.filter(x => x.c.cuentaId === cta.id).sort((a, b) => (a.c.dia || 99) - (b.c.dia || 99)); // los que tienen día de cobro, en orden
     if (!its.length) continue;
