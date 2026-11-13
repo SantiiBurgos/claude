@@ -1,4 +1,4 @@
-const CACHE = 'gastos-v17';
+const CACHE = 'gastos-v18';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

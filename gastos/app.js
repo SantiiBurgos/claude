@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 17; // subir junto con el nombre del caché en sw.js
+const VERSION = 18; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -120,7 +120,9 @@ const ingresosMes = m => S.ingresos.map(i => enMes(i, m)).filter(Boolean);
 const gastosMes = m => S.gastos.filter(g => g.fecha.startsWith(m));
 const totalComps = m => sum(compsMes(m), x => x.monto);
 const totalIngresos = m => sum(ingresosMes(m), x => x.monto);
-const totalGastos = m => sum(gastosMes(m), g => g.monto);
+// Lo pagado con un medio "ajeno" (ej. la tarjeta de comida del trabajo) se anota pero no cuenta como gasto propio.
+const propio = g => (S.cuentas.find(c => c.id === g.cuentaId) || {}).tipo !== 'ajeno';
+const totalGastos = m => sum(gastosMes(m).filter(propio), g => g.monto);
 const cuenta = id => S.cuentas.find(c => c.id === id) || { id, nombre: 'Sin cuenta', tipo: 'contado' };
 const categoria = id => S.categorias.find(c => c.id === id) || { id, nombre: 'Otros', emoji: '📦' };
 // Lo que falta pagar de todas las cuotas desde el mes m en adelante.
@@ -160,8 +162,8 @@ function filaMov(g, conFecha) {
   const cat = categoria(g.cat);
   return `<button class="row" data-act="${g.credito ? 'editar-comp' : 'editar-gasto'}" data-id="${g.id}">
     <span class="emoji">${esc(cat.emoji)}</span>
-    <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${marca(cuenta(g.cuentaId), 14)}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${g.img ? ' · 📎' : ''}</div></span>
-    <span class="amt num" ${g.credito ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
+    <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${marca(cuenta(g.cuentaId), 14)}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${propio(g) ? '' : ' · no cuenta'}${g.img ? ' · 📎' : ''}</div></span>
+    <span class="amt num" ${g.credito || !propio(g) ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
 }
 // Movimientos que la app Android detectó en notificaciones y todavía no confirmaste.
 function detectados() {
@@ -221,7 +223,7 @@ function vInicio() {
   for (const g of gs) {
     if (g.fecha !== dia) {
       dia = g.fecha;
-      const tot = sum(gs.filter(x => x.fecha === dia && !x.credito), x => x.monto);
+      const tot = sum(gs.filter(x => x.fecha === dia && !x.credito && propio(x)), x => x.monto);
       lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num">${fmt(tot)}</span></h2><div class="card">`;
     }
     lista += filaMov(g);
@@ -253,7 +255,7 @@ function resultados() {
   const r = [...S.gastos, ...comprasCredito()].filter(g => (!q || (g.desc || categoria(g.cat).nombre).toLowerCase().includes(q)) && (!filtro.cat || g.cat === filtro.cat) && (!filtro.cta || g.cuentaId === filtro.cta))
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   if (!r.length) return `<div class="empty">No hay movimientos que coincidan.</div>`;
-  return `<h2><span>${r.length} ${r.length === 1 ? 'movimiento' : 'movimientos'}</span><span class="num">${fmt(sum(r, g => g.monto))}</span></h2>
+  return `<h2><span>${r.length} ${r.length === 1 ? 'movimiento' : 'movimientos'}</span><span class="num">${fmt(sum(r.filter(propio), g => g.monto))}</span></h2>
     <div class="card">${r.slice(0, 200).map(g => filaMov(g, true)).join('')}</div>${r.length > 200 ? '<div class="hint">Se muestran los 200 más recientes: afiná la búsqueda para ver el resto.</div>' : ''}`;
 }
 
@@ -311,7 +313,7 @@ function vResumen() {
     <div class="row"><span class="grow">Gastos del día a día</span><span class="amt num">${fmt(-gas)}</span></div>
     <div class="row total"><span class="grow">Te queda</span><span class="amt num" ${ing - comp - gas < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(ing - comp - gas)}</span></div></div>`;
 
-  const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id), g => g.monto) })).filter(x => x.t > 0 || x.c.tope > 0).sort((a, b) => b.t - a.t);
+  const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id && propio(g)), g => g.monto) })).filter(x => x.t > 0 || x.c.tope > 0).sort((a, b) => b.t - a.t);
   if (porCat.length) {
     const max = Math.max(1, porCat[0].t);
     html += `<h2><span>En qué se fue</span><span class="num">${fmt(gas)}</span></h2><div class="card pad">` + porCat.map(x => `
@@ -513,9 +515,9 @@ function vAjustes() {
     <div class="card"><button class="row" data-act="editar-dolar"><span class="grow">Valor en ${mesNombre(ym)}</span><span class="amt num">${dolarMes(ym) ? fmt(dolarMes(ym)) : 'Sin cargar'}</span></button></div>
     <div class="hint">Se usa para pasar a pesos lo que cargues en dólares (suscripciones). ${S.dolarAuto === false ? 'Lo cargás vos a mano.' : `Se actualiza solo con el dólar tarjeta, que ya incluye impuestos. ${S.dolarError ? '<b>No se pudo actualizar la última vez</b>; se usa el último valor guardado.' : S.dolarFecha ? `Última actualización: ${new Date(S.dolarFecha + 'T12:00').toLocaleDateString('es-AR')}.` : 'Se consulta cuando cargues algo en dólares.'}`}</div>
     <h2><span>Tarjetas y medios de pago</span></h2><div class="card">
-    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}">${marca(c, 28)}<span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : 'Contado'}</span></button>`).join('')}
+    ${S.cuentas.map(c => `<button class="row" data-act="editar-cuenta" data-id="${c.id}">${marca(c, 28)}<span class="grow t">${esc(c.nombre)}</span><span class="badge">${c.tipo === 'credito' ? (c.cierre ? `Cierra el ${c.cierre}` : 'Crédito') : c.tipo === 'ajeno' ? 'No cuenta' : 'Contado'}</span></button>`).join('')}
     <button class="row" data-act="nueva-cuenta"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
-    <div class="hint">Lo que cargues con un medio de <b>crédito</b> va a la pestaña Mensual. Si le ponés el día de cierre a la tarjeta, la app calcula sola en qué mes entra cada compra. Lo de <b>contado</b> cuenta como gasto del día.</div>
+    <div class="hint">Lo que cargues con un medio de <b>crédito</b> va a la pestaña Mensual. Si le ponés el día de cierre a la tarjeta, la app calcula sola en qué mes entra cada compra. Lo de un medio que <b>paga otro</b> (la tarjeta de comida del trabajo) queda anotado pero no suma a tus gastos. Lo de <b>contado</b> cuenta como gasto del día.</div>
     <h2><span>Categorías</span></h2><div class="card">
     ${S.categorias.map(c => `<button class="row" data-act="editar-cat" data-id="${c.id}"><span class="emoji">${esc(c.emoji)}</span><span class="grow t">${esc(c.nombre)}</span></button>`).join('')}
     <button class="row" data-act="nueva-cat"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar</span></button></div>
@@ -771,7 +773,7 @@ function formCuenta(c) {
     title: c ? 'Editar medio de pago' : 'Nuevo medio de pago',
     fields: [
       { name: 'nombre', type: 'text', label: 'Nombre', value: c?.nombre, placeholder: 'Ej: Amex, Mercado Pago…' },
-      { name: 'tipo', type: 'chips', label: 'Cómo se paga', value: c?.tipo || 'credito', options: [{ v: 'credito', l: 'Crédito (resumen mensual)' }, { v: 'contado', l: 'Contado (débito, efectivo)' }] },
+      { name: 'tipo', type: 'chips', label: 'Cómo se paga', value: c?.tipo || 'credito', options: [{ v: 'credito', l: 'Crédito (resumen mensual)' }, { v: 'contado', l: 'Contado (débito, efectivo)' }, { v: 'ajeno', l: 'Lo paga otro (ej. tarjeta del trabajo)' }] },
       { name: 'color', type: 'color', label: 'Color', value: c?.color },
       { name: 'logo', type: 'logo', label: 'Logo (opcional)', value: c?.logo },
       { name: 'cierre', type: 'number', label: 'Día del mes en que cierra el resumen (opcional)', value: c?.cierre || '', placeholder: 'Ej: 25', showIf: v => v.tipo === 'credito' },
