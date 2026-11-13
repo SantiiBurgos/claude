@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 20; // subir junto con el nombre del caché en sw.js
+const VERSION = 21; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -196,6 +196,19 @@ function vDetectados() {
     <div class="hint">Tocá uno para revisarlo y anotarlo. La ✕ lo descarta.</div>`;
 }
 // Tarjetas con algo sin pagar que vencen en los próximos 7 días (o ya vencieron).
+// Fijos con día de cobro que todavía no están marcados como pagados y se cobran en los próximos 3 días (o ya debieron cobrarse).
+function cobros() {
+  const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
+  return compsMes(act).filter(x => x.c.dia && !pagos[x.c.id] && x.c.dia - dia <= 3).map(x => ({ x, dias: x.c.dia - dia })).sort((a, b) => a.dias - b.dias);
+}
+function vCobros() {
+  const cs = cobros();
+  if (!cs.length) return '';
+  return `<h2><span>Cobros automáticos</span><span class="num">${fmt(sum(cs, c => c.x.monto))}</span></h2><div class="card">${cs.map(c => `<div class="row">
+    <button class="check" data-act="pagar-hoy" data-id="${c.x.c.id}" aria-label="Marcar pagado">✓</button>
+    <button class="grow" data-act="ir-mensual" style="text-align:left"><div class="t">${esc(c.x.c.nombre)}</div><div class="s">${c.dias < 0 ? `Debía cobrarse el ${c.x.c.dia}: si ya se cobró, tildalo` : c.dias === 0 ? 'Se cobra hoy' : c.dias === 1 ? 'Se cobra mañana' : `Se cobra en ${c.dias} días`}</div></button>
+    <span class="amt num">${fmt(c.x.monto)}</span></div>`).join('')}</div>`;
+}
 function vencimientos() {
   const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
   return S.cuentas.filter(c => c.vence).map(c => {
@@ -242,7 +255,7 @@ function vInicio() {
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}${pres ? ` · ${pres > 0 ? 'Prestado sin devolver' : 'Te devolvieron'} ${fmt(Math.abs(pres))}` : ''}</div>
-    </section>${rep}${presu}${lista}${buscar}`;
+    </section>${rep}${presu}${ym === hoy().slice(0, 7) ? vCobros() : ''}${lista}${buscar}`;
 }
 
 const filtro = { q: '', cat: '', cta: '' };
@@ -280,7 +293,7 @@ function vMensual() {
       <div class="sub">${ing ? Math.round(total / ing * 100) + '% de tus ingresos · ' : ''}Pagado ${fmt(pagado)} · Falta ${fmt(total - pagado)}</div>
     </section>`;
   for (const cta of S.cuentas) {
-    const its = items.filter(x => x.c.cuentaId === cta.id);
+    const its = items.filter(x => x.c.cuentaId === cta.id).sort((a, b) => (a.c.dia || 99) - (b.c.dia || 99)); // los que tienen día de cobro, en orden
     if (!its.length) continue;
     const enSig = sum(compsMes(sig).filter(x => x.c.cuentaId === cta.id), x => x.monto);
     html += `<h2><span class="hm">${marca(cta, 24)}${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card" ${esColor(cta.color) ? `style="box-shadow:inset 4px 0 0 ${cta.color}"` : ''}>`;
@@ -288,7 +301,7 @@ function vMensual() {
       const ok = !!pagos[x.c.id];
       html += `<div class="row ${ok ? 'done' : ''}">
         <button class="check ${ok ? 'on' : ''}" data-act="pagar" data-id="${x.c.id}" aria-label="Marcar pagado">✓</button>
-        <button class="grow" data-act="editar-comp" data-id="${x.c.id}" style="text-align:left"><div class="t" style="white-space:normal">${esc(x.c.nombre)}</div>${x.c.usd ? `<div class="s">${fmtUsd(x.c.usd)} a ${fmt(dolarMes(ym))}</div>` : ''}</button>
+        <button class="grow" data-act="editar-comp" data-id="${x.c.id}" style="text-align:left"><div class="t" style="white-space:normal">${esc(x.c.nombre)}</div>${x.c.usd || x.c.dia ? `<div class="s">${[x.c.dia ? 'Se cobra el ' + x.c.dia : '', x.c.usd ? `${fmtUsd(x.c.usd)} a ${fmt(dolarMes(ym))}` : ''].filter(Boolean).join(' · ')}</div>` : ''}</button>
         <span class="badge ${x.ultima ? 'last' : ''}">${x.etiqueta}</span>
         <span class="amt num">${fmt(x.monto)}</span></div>`;
     }
@@ -815,6 +828,7 @@ async function formComp(c, esIngreso) {
       { name: 'tipo', type: 'chips', label: 'Se repite', value: c?.tipo || (esIngreso ? 'mensual' : 'cuotas'), options: tipos },
       { name: 'n', type: 'number', label: `Cuota que toca en ${mesNombre(ym)}`, value: nAct, showIf: v => v.tipo === 'cuotas' },
       { name: 'total', type: 'number', label: 'Cantidad total de cuotas', value: c?.total || 3, showIf: v => v.tipo === 'cuotas' },
+      ...(esIngreso ? [] : [{ name: 'dia', type: 'number', label: 'Día del mes en que se cobra (opcional)', value: c?.dia || '', placeholder: 'Ej: 11', showIf: v => v.tipo === 'mensual' }]),
       ...(esIngreso ? [] : [{ name: 'usd', type: 'number', label: 'Precio en dólares (opcional: reemplaza el monto en pesos)', value: c?.usd || '', placeholder: 'Ej: 9,99' }]),
       ...(esIngreso ? [] : [{ name: 'ajuste', type: 'number', label: 'Aumento estimado por mes, en % (opcional, ej. préstamo UVA)', value: c?.ajuste || '', showIf: v => v.tipo !== 'unico' }]),
     ],
@@ -827,7 +841,7 @@ async function formComp(c, esIngreso) {
       if (!v.monto) return 'Poné un monto';
       if (!v.nombre) return 'Ponele un nombre';
       const total = Math.max(1, Math.round(v.total)), n = Math.min(total, Math.max(1, Math.round(v.n)));
-      const base = { nombre: v.nombre, monto: v.monto, tipo: v.tipo, ...(esIngreso ? {} : { cuentaId: v.cuentaId, usd: v.usd > 0 ? v.usd : 0 }) };
+      const base = { nombre: v.nombre, monto: v.monto, tipo: v.tipo, ...(esIngreso ? {} : { cuentaId: v.cuentaId, usd: v.usd > 0 ? v.usd : 0, dia: v.tipo === 'mensual' ? Math.min(31, Math.max(0, Math.round(v.dia || 0))) : 0 }) };
       if (v.ajuste) { base.ajuste = v.ajuste; base.base = ym; } else { base.ajuste = 0; }
       if (v.tipo === 'cuotas') { base.total = total; base.inicio = addYm(ym, -(n - 1)); }
       if (!ed) { S[lista].push({ id: uid(), inicio: ym, total: 1, ...base }); return; }
@@ -1152,6 +1166,7 @@ const acciones = {
     });
   },
   'logo-quitar': () => { hoja.logo = ''; pintarLogo(); },
+  'pagar-hoy': id => { (S.pagos[hoy().slice(0, 7)] ??= {})[id] = true; guardar(); },
   'ir-mensual': () => { tab = 'mensual'; },
   'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
   'evo': m => { evoSel = m; },
