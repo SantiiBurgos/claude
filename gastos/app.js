@@ -18,7 +18,7 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 23; // subir junto con el nombre del caché en sw.js
+const VERSION = 24; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -166,7 +166,7 @@ function filaMov(g, conFecha) {
   return `<button class="row" data-act="${g.credito ? 'editar-comp' : 'editar-gasto'}" data-id="${g.id}">
     <span class="emoji">${esc(cat.emoji)}</span>
     <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${marca(cuenta(g.cuentaId), 14)}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${propio(g) ? '' : ' · no cuenta'}${g.img ? ' · 📎' : ''}</div></span>
-    <span class="amt num" ${g.credito || !propio(g) ? 'style="color:var(--muted)"' : ''}>${fmt(g.monto)}</span></button>`;
+    <span class="amt num ${g.credito || !propio(g) ? 'mut' : g.monto < 0 ? 'pos' : 'neg'}">${fmt(g.monto)}</span></button>`;
 }
 // Movimientos que la app Android detectó en notificaciones y todavía no confirmaste.
 function detectados() {
@@ -192,7 +192,7 @@ function vDetectados() {
   if (!ds.length) return '';
   return `<h2><span>Detectados en notificaciones</span><span class="num">${ds.length}</span></h2><div class="card">${ds.slice(0, 20).map(d => `<div class="row">
     <button class="grow" data-act="det-usar" data-id="${esc(d.id)}" style="text-align:left"><div class="t" style="white-space:normal">${esc(d.desc || d.app)}</div><div class="s">${esc(d.app)} · ${etiquetaDia(d.fecha)} · ${d.ingreso ? 'ingreso' : 'gasto'}</div></button>
-    <span class="amt num">${fmt(d.monto)}</span><button class="x" data-act="det-quitar" data-id="${esc(d.id)}" aria-label="Descartar">✕</button></div>`).join('')}</div>
+    <span class="amt num ${d.ingreso ? 'pos' : 'neg'}">${fmt(d.monto)}</span><button class="x" data-act="det-quitar" data-id="${esc(d.id)}" aria-label="Descartar">✕</button></div>`).join('')}</div>
     <div class="hint">Tocá uno para revisarlo y anotarlo. La ✕ lo descarta.</div>`;
 }
 // Tarjetas con algo sin pagar que vencen en los próximos 7 días (o ya vencieron).
@@ -204,10 +204,10 @@ function cobros() {
 function vCobros() {
   const cs = cobros();
   if (!cs.length) return '';
-  return `<h2><span>Cobros automáticos</span><span class="num">${fmt(sum(cs, c => c.x.monto))}</span></h2><div class="card">${cs.map(c => `<div class="row">
+  return `<h2><span>Cobros automáticos</span><span class="num neg">${fmt(sum(cs, c => c.x.monto))}</span></h2><div class="card">${cs.map(c => `<div class="row">
     <button class="check" data-act="pagar-hoy" data-id="${c.x.c.id}" aria-label="Marcar pagado">✓</button>
     <button class="grow" data-act="ir-mensual" style="text-align:left"><div class="t">${esc(c.x.c.nombre)}</div><div class="s">${c.dias < 0 ? `Debía cobrarse el ${c.x.c.dia}: si ya se cobró, tildalo` : c.dias === 0 ? 'Se cobra hoy' : c.dias === 1 ? 'Se cobra mañana' : `Se cobra en ${c.dias} días`}</div></button>
-    <span class="amt num">${fmt(c.x.monto)}</span></div>`).join('')}</div>`;
+    <span class="amt num neg">${fmt(c.x.monto)}</span></div>`).join('')}</div>`;
 }
 function vencimientos() {
   const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
@@ -227,12 +227,12 @@ function vInicio() {
     let porDia = '';
     if (ym === hoy().slice(0, 7) && libre > 0) {
       const d = new Date(), dias = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate() + 1;
-      porDia = `<div class="kv"><span>Podés gastar por día</span><span class="num">${fmt(libre / dias)}</span></div>`;
+      porDia = `<div class="kv"><span>Podés gastar por día</span><span class="num pos">${fmt(libre / dias)}</span></div>`;
     }
     presu = `<div class="card pad">
-      <div class="kv"><span>Gastos del día a día</span><span class="num"><b>${fmt(gas)}</b> de ${fmt(S.presupuesto)}</span></div>
+      <div class="kv"><span>Gastos del día a día</span><span class="num"><b class="neg">${fmt(gas)}</b> de ${fmt(S.presupuesto)}</span></div>
       <div class="bar ${libre < 0 ? 'over' : ''}"><div style="width:${pct}%"></div></div>
-      <div class="kv"><span>${libre < 0 ? 'Te pasaste por' : 'Te queda del tope'}</span><span class="num">${fmt(Math.abs(libre))}</span></div>
+      <div class="kv"><span>${libre < 0 ? 'Te pasaste por' : 'Te queda del tope'}</span><span class="num ${libre < 0 ? 'neg' : 'pos'}">${fmt(Math.abs(libre))}</span></div>
       ${porDia}</div>`;
   }
   let lista = '', dia = '';
@@ -240,7 +240,7 @@ function vInicio() {
     if (g.fecha !== dia) {
       dia = g.fecha;
       const tot = sum(gs.filter(x => x.fecha === dia && !x.credito && propio(x)), x => x.monto);
-      lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num">${fmt(tot)}</span></h2><div class="card">`;
+      lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num neg">${fmt(tot)}</span></h2><div class="card">`;
     }
     lista += filaMov(g);
   }
@@ -249,11 +249,11 @@ function vInicio() {
   const aviso = hayDatos && dias >= 30 ? `<div class="card pad aviso"><p>${dias === Infinity ? 'Todavía no guardaste ningún respaldo.' : `Hace ${dias} días que no guardás un respaldo.`} Tus datos viven solo en este teléfono.</p><button class="btn" data-act="respaldar">Guardar respaldo ahora</button></div>` : '';
   const frec = frecuentes();
   const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
-  const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
+  const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num neg"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
   const buscar = `<button class="btn line" data-act="ir-importar">Importar captura de Mercado Pago</button>` + (S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '');
   return `${aviso}${venc}${ym === hoy().slice(0, 7) ? vDetectados() : ''}<section class="hero">
       <div class="lbl">Te queda este mes</div>
-      <div class="big num ${queda < 0 ? 'neg' : ''}">${fmt(queda)}</div>
+      <div class="big num ${queda < 0 ? 'neg' : 'pos'}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}${pres ? ` · ${pres > 0 ? 'Prestado sin devolver' : 'Te devolvieron'} ${fmt(Math.abs(pres))}` : ''}</div>
     </section>${rep}${presu}${ym === hoy().slice(0, 7) ? vCobros() : ''}${lista}${buscar}`;
 }
@@ -271,7 +271,7 @@ function resultados() {
   const r = [...S.gastos, ...comprasCredito()].filter(g => (!q || (g.desc || categoria(g.cat).nombre).toLowerCase().includes(q)) && (!filtro.cat || g.cat === filtro.cat) && (!filtro.cta || g.cuentaId === filtro.cta))
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   if (!r.length) return `<div class="empty">No hay movimientos que coincidan.</div>`;
-  return `<h2><span>${r.length} ${r.length === 1 ? 'movimiento' : 'movimientos'}</span><span class="num">${fmt(sum(r.filter(propio), g => g.monto))}</span></h2>
+  return `<h2><span>${r.length} ${r.length === 1 ? 'movimiento' : 'movimientos'}</span><span class="num neg">${fmt(sum(r.filter(propio), g => g.monto))}</span></h2>
     <div class="card">${r.slice(0, 200).map(g => filaMov(g, true)).join('')}</div>${r.length > 200 ? '<div class="hint">Se muestran los 200 más recientes: afiná la búsqueda para ver el resto.</div>' : ''}`;
 }
 
@@ -289,7 +289,7 @@ function vMensual() {
   const ing = totalIngresos(ym);
   let html = `<section class="hero">
       <div class="lbl">Total a pagar en ${mesNombre(ym)}</div>
-      <div class="big num">${fmt(total)}</div>
+      <div class="big num neg">${fmt(total)}</div>
       <div class="sub">${ing ? Math.round(total / ing * 100) + '% de tus ingresos · ' : ''}Pagado ${fmt(pagado)} · Falta ${fmt(total - pagado)}</div>
     </section>`;
   if (ing) {
@@ -297,23 +297,23 @@ function vMensual() {
     const libre = ing - total, pct = S.sim?.pct ?? 30, ahorro = Math.round(Math.max(0, libre) * pct / 100), conAhorro = libre - ahorro;
     const dias = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate();
     html += `<div class="card">
-      <div class="row"><span class="grow">Ingresos de ${mesNombre(ym)}</span><span class="amt num">${fmt(ing)}</span></div>
-      <div class="row total"><span class="grow">Disponible después de los fijos</span><span class="amt num" ${libre < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(libre)}</span></div>
+      <div class="row"><span class="grow">Ingresos de ${mesNombre(ym)}</span><span class="amt num pos">${fmt(ing)}</span></div>
+      <div class="row total"><span class="grow">Disponible después de los fijos</span><span class="amt num ${libre < 0 ? 'neg' : 'pos'}">${fmt(libre)}</span></div>
       <button class="row" data-act="ir-plan"><span class="grow"><div class="t">Ahorro (${pct}%)</div><div class="s">Se cambia en Plan → Simulador</div></span><span class="amt num">${fmt(-ahorro)}</span></button>
-      <div class="row total"><span class="grow"><div class="t">Disponible si ahorrás</div><div class="s" style="font-weight:400">${fmt(conAhorro / dias)} por día</div></span><span class="amt num" ${conAhorro < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(conAhorro)}</span></div></div>`;
+      <div class="row total"><span class="grow"><div class="t">Disponible si ahorrás</div><div class="s" style="font-weight:400">${fmt(conAhorro / dias)} por día</div></span><span class="amt num ${conAhorro < 0 ? 'neg' : 'pos'}">${fmt(conAhorro)}</span></div></div>`;
   }
   for (const cta of S.cuentas) {
     const its = items.filter(x => x.c.cuentaId === cta.id).sort((a, b) => (a.c.dia || 99) - (b.c.dia || 99)); // los que tienen día de cobro, en orden
     if (!its.length) continue;
     const enSig = sum(compsMes(sig).filter(x => x.c.cuentaId === cta.id), x => x.monto);
-    html += `<h2><span class="hm">${marca(cta, 24)}${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num">${fmt(sum(its, x => x.monto))}</span></h2><div class="card" ${esColor(cta.color) ? `style="box-shadow:inset 4px 0 0 ${cta.color}"` : ''}>`;
+    html += `<h2><span class="hm">${marca(cta, 24)}${esc(cta.nombre)}${cta.vence ? ` · vence el ${cta.vence}` : ''}</span><span class="num neg">${fmt(sum(its, x => x.monto))}</span></h2><div class="card" ${esColor(cta.color) ? `style="box-shadow:inset 4px 0 0 ${cta.color}"` : ''}>`;
     for (const x of its) {
       const ok = !!pagos[x.c.id];
       html += `<div class="row ${ok ? 'done' : ''}">
         <button class="check ${ok ? 'on' : ''}" data-act="pagar" data-id="${x.c.id}" aria-label="Marcar pagado">✓</button>
         <button class="grow" data-act="editar-comp" data-id="${x.c.id}" style="text-align:left"><div class="t" style="white-space:normal">${esc(x.c.nombre)}</div>${x.c.usd || x.c.dia ? `<div class="s">${[x.c.dia ? 'Se cobra el ' + x.c.dia : '', x.c.usd ? `${fmtUsd(x.c.usd)} a ${fmt(dolarMes(ym))}` : ''].filter(Boolean).join(' · ')}</div>` : ''}</button>
         <span class="badge ${x.ultima ? 'last' : ''}">${x.etiqueta}</span>
-        <span class="amt num">${fmt(x.monto)}</span></div>`;
+        <span class="amt num neg">${fmt(x.monto)}</span></div>`;
     }
     const todo = its.every(x => pagos[x.c.id]);
     if (its.length > 1) html += `<button class="row" data-act="pagar-cuenta" data-id="${cta.id}"><span class="check ${todo ? 'on' : ''}">✓</span><span class="grow s">${todo ? 'Todo pagado' : 'Marcar todo como pagado'}</span></button>`;
@@ -321,7 +321,7 @@ function vMensual() {
   }
   const huerfanos = items.filter(x => !S.cuentas.some(c => c.id === x.c.cuentaId));
   if (huerfanos.length) {
-    html += `<h2><span>Sin cuenta</span></h2><div class="card">` + huerfanos.map(x => `<button class="row" data-act="editar-comp" data-id="${x.c.id}"><span class="grow t">${esc(x.c.nombre)}</span><span class="badge">${x.etiqueta}</span><span class="amt num">${fmt(x.monto)}</span></button>`).join('') + '</div>';
+    html += `<h2><span>Sin cuenta</span></h2><div class="card">` + huerfanos.map(x => `<button class="row" data-act="editar-comp" data-id="${x.c.id}"><span class="grow t">${esc(x.c.nombre)}</span><span class="badge">${x.etiqueta}</span><span class="amt num neg">${fmt(x.monto)}</span></button>`).join('') + '</div>';
   }
   if (!items.length) html += `<div class="empty">No hay cuotas ni gastos fijos en ${mesNombre(ym)}.</div>`;
   return html + `<button class="btn line" data-act="nuevo-comp">+ Agregar cuota o gasto fijo</button>`;
@@ -329,22 +329,22 @@ function vMensual() {
 
 function vResumen() {
   const ings = ingresosMes(ym), ing = sum(ings, x => x.monto), comp = totalComps(ym), gas = totalGastos(ym);
-  let html = `<h2><span>Ingresos de ${mesNombre(ym)}</span><span class="num">${fmt(ing)}</span></h2><div class="card">`;
-  html += ings.map(x => `<button class="row" data-act="editar-ing" data-id="${x.c.id}"><span class="grow t">${esc(x.c.nombre)}</span><span class="badge">${x.c.tipo === 'mensual' ? 'Fijo' : 'Único'}</span><span class="amt num">${fmt(x.monto)}</span></button>`).join('');
+  let html = `<h2><span>Ingresos de ${mesNombre(ym)}</span><span class="num pos">${fmt(ing)}</span></h2><div class="card">`;
+  html += ings.map(x => `<button class="row" data-act="editar-ing" data-id="${x.c.id}"><span class="grow t">${esc(x.c.nombre)}</span><span class="badge">${x.c.tipo === 'mensual' ? 'Fijo' : 'Único'}</span><span class="amt num pos">${fmt(x.monto)}</span></button>`).join('');
   html += `<button class="row" data-act="nuevo-ing"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar ingreso</span></button></div>`;
 
   html += `<h2><span>Balance del mes</span></h2><div class="card">
-    <div class="row"><span class="grow">Ingresos</span><span class="amt num">${fmt(ing)}</span></div>
-    <div class="row"><span class="grow">Fijos y cuotas</span><span class="amt num">${fmt(-comp)}</span></div>
-    <div class="row"><span class="grow">Gastos del día a día</span><span class="amt num">${fmt(-gas)}</span></div>
-    ${prestadoNeto(ym) ? `<div class="row"><span class="grow">${prestadoNeto(ym) > 0 ? 'Prestado o pagado por otros, sin devolver' : 'Te devolvieron préstamos'}</span><span class="amt num">${fmt(-prestadoNeto(ym))}</span></div>` : ''}
-    <div class="row total"><span class="grow">Te queda</span><span class="amt num" ${ing - comp - gas - prestadoNeto(ym) < 0 ? 'style="color:var(--bad)"' : ''}>${fmt(ing - comp - gas - prestadoNeto(ym))}</span></div></div>`;
+    <div class="row"><span class="grow">Ingresos</span><span class="amt num pos">${fmt(ing)}</span></div>
+    <div class="row"><span class="grow">Fijos y cuotas</span><span class="amt num neg">${fmt(-comp)}</span></div>
+    <div class="row"><span class="grow">Gastos del día a día</span><span class="amt num neg">${fmt(-gas)}</span></div>
+    ${prestadoNeto(ym) ? `<div class="row"><span class="grow">${prestadoNeto(ym) > 0 ? 'Prestado o pagado por otros, sin devolver' : 'Te devolvieron préstamos'}</span><span class="amt num ${prestadoNeto(ym) > 0 ? 'neg' : 'pos'}">${fmt(-prestadoNeto(ym))}</span></div>` : ''}
+    <div class="row total"><span class="grow">Te queda</span><span class="amt num ${ing - comp - gas - prestadoNeto(ym) < 0 ? 'neg' : 'pos'}">${fmt(ing - comp - gas - prestadoNeto(ym))}</span></div></div>`;
 
   const porCat = S.categorias.map(c => ({ c, t: sum(gastosMes(ym).filter(g => g.cat === c.id && propio(g)), g => g.monto) })).filter(x => x.t > 0 || x.c.tope > 0).sort((a, b) => b.t - a.t);
   if (porCat.length) {
     const max = Math.max(1, porCat[0].t);
-    html += `<h2><span>En qué se fue</span><span class="num">${fmt(gas)}</span></h2><div class="card pad">` + porCat.map(x => `
-      <div class="kv"><span style="color:var(--text)">${esc(x.c.emoji)} ${esc(x.c.nombre)}</span><span class="num">${fmt(x.t)}${x.c.tope ? ' de ' + fmt(x.c.tope) + (x.t > x.c.tope ? ' ⚠' : '') : gas ? ' · ' + Math.round(x.t / gas * 100) + '%' : ''}</span></div>
+    html += `<h2><span>En qué se fue</span><span class="num neg">${fmt(gas)}</span></h2><div class="card pad">` + porCat.map(x => `
+      <div class="kv"><span style="color:var(--text)">${esc(x.c.emoji)} ${esc(x.c.nombre)}</span><span class="num neg">${fmt(x.t)}${x.c.tope ? ' de ' + fmt(x.c.tope) + (x.t > x.c.tope ? ' ⚠' : '') : gas ? ' · ' + Math.round(x.t / gas * 100) + '%' : ''}</span></div>
       <div class="bar ${x.c.tope && x.t > x.c.tope ? 'over' : ''}"><div style="width:${Math.min(100, x.t / (x.c.tope || max) * 100)}%"></div></div>`).join('') + '<div class="hint">El tope de cada categoría se pone en Ajustes → Categorías.</div></div>';
   }
 
@@ -357,9 +357,9 @@ function vResumen() {
       <div class="leyenda"><span><i class="s1"></i>Fijos y cuotas</span><span><i class="s2"></i>Día a día</span></div>
       <div class="evo" role="img" aria-label="Gasto total por mes, últimos 6 meses">${meses.map(x => `<button data-act="evo" data-id="${x.m}" class="${x.m === sel.m ? 'on' : ''}" aria-label="${mesNombre(x.m)}: ${fmt(x.f + x.d)}">
         <span class="col">${x.d ? `<i class="s2" style="height:${x.d / tope * 100}%"></i>` : ''}${x.f ? `<i class="s1" style="height:${x.f / tope * 100}%"></i>` : ''}</span><span class="ml">${mesNombre(x.m).slice(0, 3)}</span></button>`).join('')}</div>
-      <div class="kv"><span style="text-transform:capitalize">${mesNombre(sel.m)} ${sel.m.slice(0, 4)}</span><span class="num"><b>${fmt(sel.f + sel.d)}</b></span></div>
-      <div class="kv"><span>Fijos y cuotas</span><span class="num">${fmt(sel.f)}</span></div>
-      <div class="kv"><span>Día a día</span><span class="num">${fmt(sel.d)}</span></div>
+      <div class="kv"><span style="text-transform:capitalize">${mesNombre(sel.m)} ${sel.m.slice(0, 4)}</span><span class="num neg"><b>${fmt(sel.f + sel.d)}</b></span></div>
+      <div class="kv"><span>Fijos y cuotas</span><span class="num neg">${fmt(sel.f)}</span></div>
+      <div class="kv"><span>Día a día</span><span class="num neg">${fmt(sel.d)}</span></div>
       <div class="hint">Tocá una columna para ver ese mes.</div></div>`;
   }
 
@@ -420,13 +420,13 @@ function simResultado(pct) {
     if (i === 0) primero = { libre, a };
     if (M?.minimo && !mMin && acum >= M.minimo) mMin = m;
     if (M && !mTot && acum >= M.total) mTot = m;
-    if (i < 6) filas += `<tr><td>${mesCorto(m)}</td><td class="num">${fmt(a)}</td><td class="num"><b>${fmt(acum)}</b></td><td class="num">${usd(acum)}</td></tr>`;
+    if (i < 6) filas += `<tr><td>${mesCorto(m)}</td><td class="num pos">${fmt(a)}</td><td class="num pos"><b>${fmt(acum)}</b></td><td class="num">${usd(acum)}</td></tr>`;
   }
   if (!primero.libre) return `<div class="hint">Cargá tu sueldo en Resumen para poder simular.</div>`;
   const vivir = primero.libre - primero.a, dias = new Date(Number(desde.slice(0, 4)), Number(desde.slice(5)), 0).getDate();
   const falta = ref.monto - vivir;
-  return `<div class="kv"><span>Ahorrás (${mesNombre(desde).slice(0, 3)})</span><span class="num"><b>${fmt(primero.a)}</b>${d ? ' · ' + usd(primero.a) : ''}</span></div>
-    <div class="kv"><span>Para vivir</span><span class="num">${fmt(vivir)} · ${fmt(vivir / dias)} por día</span></div>
+  return `<div class="kv"><span>Ahorrás (${mesNombre(desde).slice(0, 3)})</span><span class="num pos"><b>${fmt(primero.a)}</b>${d ? ' · ' + usd(primero.a) : ''}</span></div>
+    <div class="kv"><span>Para vivir</span><span class="num pos">${fmt(vivir)} · ${fmt(vivir / dias)} por día</span></div>
     <div class="hint">${ref.monto ? (falta > 0 ? `⚠ Hoy gastás unos ${fmt(ref.monto)} por mes (${ref.fuente}): tendrías que bajar ${fmt(falta)}.` : `Entra en lo que gastás hoy: unos ${fmt(ref.monto)} por mes (${ref.fuente}).`) : 'Cuando anotes gastos, acá te digo si este plan entra en lo que gastás.'}</div>
     <table><tr><th>Mes</th><th>Ahorrás</th><th>Acumulado</th><th>En dólares</th></tr>${filas}</table>
     ${M ? `<div class="hint">${M.minimo ? `Mínimo de ${fmt(M.minimo)}: ${mMin ? mesCorto(mMin) : 'más de 2 años'}. ` : ''}Meta de ${fmt(M.total)}: ${mTot ? mesCorto(mTot) : 'más de 2 años'}.</div>` : ''}
@@ -484,7 +484,7 @@ function vPlan() {
     const cuando = m => m ? mesCorto(m) : 'más de 5 años';
     html += `<section class="hero">
         <div class="lbl">${esc(M.nombre)} · ${estado}</div>
-        <div class="big num">${fmt(llevo)}</div>
+        <div class="big num pos">${fmt(llevo)}</div>
         <div class="sub">de ${fmt(M.total)} · ${Math.round(llevo / M.total * 100)}%</div>
       </section>
       <div class="card pad">
@@ -499,9 +499,9 @@ function vPlan() {
     for (let i = 0; i < 6; i++) {
       const m = addYm(ym, i), est = ahorroEstimado(m), real = ahorroReal(m), futuro = m >= act;
       acum += real ?? (futuro ? est : 0);
-      html += `<tr><td>${mesCorto(m)}</td><td class="num ${est < 0 ? 'neg' : ''}">${fmt(est)}</td>
+      html += `<tr><td>${mesCorto(m)}</td><td class="num ${est < 0 ? 'neg' : 'pos'}">${fmt(est)}</td>
         <td class="num"><button class="celda" data-act="editar-ahorro" data-id="${m}">${real == null ? 'Anotar' : fmt(real)}</button></td>
-        <td class="num ${real == null && futuro ? 'est' : ''}"><b>${fmt(acum)}</b></td></tr>`;
+        <td class="num ${real == null && futuro ? 'est' : 'pos'}"><b>${fmt(acum)}</b></td></tr>`;
     }
     html += `</table><div class="hint">Tocá "Guardado" para anotar lo que apartaste de verdad ese mes. El acumulado en gris usa el estimado.</div></div>`;
   }
@@ -511,23 +511,23 @@ function vPlan() {
   html += `<h2><span>Próximos meses</span></h2><div class="card pad"><table><tr><th>Mes</th><th>Ingresos</th><th>A pagar</th><th>Queda</th></tr>`;
   for (let i = 0; i < 6; i++) {
     const m = addYm(ym, i), a = totalIngresos(m), b = totalComps(m), q = ahorroEstimado(m);
-    html += `<tr><td>${mesCorto(m)}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num ${q < 0 ? 'neg' : ''}"><b>${fmt(q)}</b></td></tr>`;
+    html += `<tr><td>${mesCorto(m)}</td><td class="num pos">${fmt(a)}</td><td class="num neg">${fmt(b)}</td><td class="num ${q < 0 ? 'neg' : 'pos'}"><b>${fmt(q)}</b></td></tr>`;
   }
   html += `</table><div class="hint">"Queda" descuenta también el gasto del día a día, unos ${fmt(ref.monto)} por mes (${ref.fuente}), y lo que tengas prestado sin devolver.</div></div>`;
 
 
   const dd = S.deudores || [];
-  html += `<h2><span>Me deben</span><span class="num">${fmt(sum(dd, saldoDeudor))}</span></h2><div class="card">
-    ${dd.map(p => `<button class="row" data-act="ver-deudor" data-id="${p.id}"><span class="grow"><div class="t">${esc(p.nombre)}</div><div class="s">${p.movs.length} ${p.movs.length === 1 ? 'movimiento' : 'movimientos'}</div></span><span class="amt num">${saldoDeudor(p) === 0 ? 'Saldado' : fmt(saldoDeudor(p))}</span></button>`).join('')}
+  html += `<h2><span>Me deben</span><span class="num pos">${fmt(sum(dd, saldoDeudor))}</span></h2><div class="card">
+    ${dd.map(p => `<button class="row" data-act="ver-deudor" data-id="${p.id}"><span class="grow"><div class="t">${esc(p.nombre)}</div><div class="s">${p.movs.length} ${p.movs.length === 1 ? 'movimiento' : 'movimientos'}</div></span><span class="amt num pos">${saldoDeudor(p) === 0 ? 'Saldado' : fmt(saldoDeudor(p))}</span></button>`).join('')}
     <button class="row" data-act="nuevo-deudor"><span class="grow" style="color:var(--accent);font-weight:600">+ Agregar persona</span></button></div>
     <div class="hint">Para préstamos y pagos que hacés por otros. No cuenta como gasto, pero lo que prestás baja lo que te queda ese mes y vuelve a subir cuando te lo devuelven.</div>`;
 
   const ds = deudas(ym);
-  html += `<h2><span>Deudas en cuotas</span><span class="num">${fmt(sum(ds, d => d.saldo))}</span></h2>`;
+  html += `<h2><span>Deudas en cuotas</span><span class="num neg">${fmt(sum(ds, d => d.saldo))}</span></h2>`;
   if (ds.length) {
     html += `<div class="card">` + ds.map(d => `<button class="row" data-act="editar-comp" data-id="${d.c.id}">
       <span class="grow"><div class="t">${esc(d.c.nombre)}</div><div class="s" style="white-space:normal">${d.restantes === 1 ? 'Última cuota' : d.restantes + ' cuotas de ' + fmt(d.cuota)} · termina ${mesCorto(d.termina)} · ${esc(cuenta(d.c.cuentaId).nombre)}</div></span>
-      <span class="amt num">${fmt(d.saldo)}</span></button>`).join('') + `</div>
+      <span class="amt num neg">${fmt(d.saldo)}</span></button>`).join('') + `</div>
       <div class="hint">Saldo que falta pagar contando desde ${mesNombre(ym)}. Dentro de un mes va a ser ${fmt(sum(deudas(addYm(ym, 1)), d => d.saldo))}.</div>`;
   } else html += `<div class="empty">No tenés cuotas pendientes.</div>`;
   return html;
@@ -542,7 +542,7 @@ function vDeudor() {
   return `<button class="btn ghost" data-act="ir-plan" style="margin-bottom:6px">‹ Volver a Plan</button>
     <section class="hero">
       <div class="lbl">${esc(p.nombre)} ${saldo < 0 ? 'te dio de más' : 'te debe'}</div>
-      <div class="big num">${fmt(Math.abs(saldo))}</div>
+      <div class="big num pos">${fmt(Math.abs(saldo))}</div>
       <div class="sub">Le prestaste o pagaste ${fmt(debe)} · Te devolvió ${fmt(dio)}</div>
     </section>
     <div class="btns" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
@@ -551,7 +551,7 @@ function vDeudor() {
     </div>
     ${movs.length ? `<div class="card">${movs.map(m => `<button class="row" data-act="editar-mov-deudor" data-id="${m.id}">
       <span class="grow"><div class="t">${esc(m.nota || (m.monto > 0 ? 'Le presté / pagué por él' : 'Me devolvió'))}</div><div class="s">${etiquetaDia(m.fecha)}</div></span>
-      <span class="amt num" ${m.monto < 0 ? 'style="color:var(--accent)"' : ''}>${m.monto < 0 ? '−' : '+'} ${fmt(Math.abs(m.monto))}</span></button>`).join('')}</div>` : '<div class="empty">Todavía no hay movimientos.</div>'}
+      <span class="amt num ${m.monto < 0 ? 'pos' : 'neg'}">${m.monto < 0 ? '−' : '+'} ${fmt(Math.abs(m.monto))}</span></button>`).join('')}</div>` : '<div class="empty">Todavía no hay movimientos.</div>'}
     <button class="btn line" data-act="editar-deudor">Cambiar nombre o eliminar</button>`;
 }
 function formDeudor(p) {
@@ -1164,7 +1164,7 @@ function vImportar() {
     if (r.fecha !== dia) { html += `${dia ? '</div>' : ''}<h2><span>${etiquetaDia(r.fecha)}</span></h2><div class="card">`; dia = r.fecha; }
     html += `<div class="row imp"><span class="grow"><div class="t">${esc(r.nombre)}</div><div class="s">${esc(r.tipo || 'Movimiento')}${r.hora ? ' · ' + r.hora : ''}${r.motivo ? ' · ' + r.motivo : ''}</div>
       <select data-imp="${i}" aria-label="Cómo anotarlo">${opcionesImp(r)}</select></span>
-      <span class="amt num" ${r.monto > 0 ? 'style="color:var(--accent)"' : ''}>${r.monto > 0 ? '+' : '−'} ${fmt(r.abs)}</span></div>`;
+      <span class="amt num ${r.monto > 0 ? 'pos' : 'neg'}">${r.monto > 0 ? '+' : '−'} ${fmt(r.abs)}</span></div>`;
   });
   return html + `</div><div class="btns" style="margin-top:14px"><button class="btn" id="imp-boton" data-act="imp-aplicar">${textoBotonImp()}</button><button class="btn ghost" data-act="imp-limpiar">Descartar</button></div>`;
 }

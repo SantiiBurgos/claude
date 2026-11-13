@@ -1,14 +1,14 @@
 :root {
   --bg: #f4f2ec; --surface: #ffffff; --surface-2: #ebe8df; --line: #dedacd;
   --text: #171a17; --muted: #6c7268; --accent: #2f6b1e; --on-accent: #ffffff;
-  --bad: #c0392b; --warn: #b7791f; --s1: #2a78d6; --s2: #eb6834;
+  --bad: #c0392b; --pos: #15803d; --warn: #b7791f; --s1: #2a78d6; --s2: #eb6834;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1110; --surface: #181b19; --surface-2: #222623; --line: #2b302c;
     --text: #eef0ea; --muted: #8d948c; --accent: #b8f04a; --on-accent: #10140a;
-    --bad: #ff6b5e; --warn: #f0b84a; --s1: #3987e5; --s2: #d95926;
+    --bad: #ff6b5e; --pos: #4ade80; --warn: #f0b84a; --s1: #3987e5; --s2: #d95926;
     color-scheme: dark;
   }
 }
@@ -179,3 +179,8 @@ a.btn { text-decoration: none; }
 .row.imp { align-items: flex-start; }
 .row.imp select { width: 100%; margin-top: 8px; padding: 9px 10px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface-2); outline: none; font-size: 14px; }
 .row.imp .amt { padding-top: 2px; }
+/* Plata que entra o queda disponible, en verde; plata que sale, en rojo. */
+.pos { color: var(--pos); } .neg { color: var(--bad); } .mut { color: var(--muted); }
+.hero .big.pos { color: var(--pos); }
+.row.done .amt.neg { color: var(--muted); }
+h2 .num.pos { color: var(--pos); } h2 .num.neg { color: var(--bad); }
