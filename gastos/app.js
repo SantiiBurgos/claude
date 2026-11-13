@@ -13,12 +13,45 @@ const addYm = (ym, n) => idxYm(ymIdx(ym) + n);
 const mesNombre = ym => MESES[ymIdx(ym) % 12];
 const mesCorto = ym => mesNombre(ym).slice(0, 3) + ' ' + ym.slice(2, 4);
 const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const addDias = (f, n) => { const d = new Date(f + 'T12:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const diasEntre = (a, b) => Math.round((Date.parse(b + 'T12:00') - Date.parse(a + 'T12:00')) / 864e5);
+const diasDelMes = m => new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 0).getDate();
+// Fecha del día N dentro del mes calendario m (si el mes es más corto, el último día).
+const fechaDia = (m, n) => `${m}-${pad(Math.min(n, diasDelMes(m)))}`;
+const fechaCorta = f => `${Number(f.slice(8))}/${Number(f.slice(5, 7))}`;
+
+/* ---------- períodos: el "mes" puede ir de cobro a cobro en vez de ser el mes calendario ---------- */
+const habiles = {};
+// Último día hábil (lunes a viernes) de un mes calendario. No tiene en cuenta feriados.
+function ultimoHabil(m) {
+  if (habiles[m]) return habiles[m];
+  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 0, 12);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return habiles[m] = `${m}-${pad(d.getDate())}`;
+}
+// Primer día del período que lleva el nombre del mes m.
+function inicioPeriodo(m) {
+  const p = S.periodo || {};
+  if (p.modo === 'habil') return ultimoHabil(addYm(m, -1)); // el sueldo de fin de octubre financia "noviembre"
+  if (p.modo === 'dia' && p.dia > 1) return fechaDia(m, p.dia);
+  return m + '-01';
+}
+const finPeriodo = m => inicioPeriodo(addYm(m, 1)); // primer día que ya no pertenece al período
+const diasPeriodo = m => diasEntre(inicioPeriodo(m), finPeriodo(m));
+// A qué período pertenece una fecha.
+function mesDe(fecha) {
+  const c = fecha.slice(0, 7);
+  if (fecha >= inicioPeriodo(addYm(c, 1))) return addYm(c, 1);
+  if (fecha < inicioPeriodo(c)) return addYm(c, -1);
+  return c;
+}
+const mesActual = () => mesDe(hoy());
 const soloNum = s => Number(String(s).replace(/\D/g, '')) || 0;
 const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 24; // subir junto con el nombre del caché en sw.js
+const VERSION = 25; // subir junto con el nombre del caché en sw.js
 const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
@@ -98,7 +131,7 @@ async function actualizarDolar(forzar) {
     const r = await fetch('https://dolarapi.com/v1/dolares/tarjeta', { cache: 'no-store', signal: AbortSignal.timeout(6000) });
     const v = Math.round(Number((await r.json()).venta));
     if (!r.ok || !(v > 0)) throw 0;
-    (S.dolares ??= {})[hoy().slice(0, 7)] = v; S.dolarFecha = hoy(); S.dolarError = false;
+    (S.dolares ??= {})[mesActual()] = v; S.dolarFecha = hoy(); S.dolarError = false;
     await guardar();
   } catch { S.dolarError = true; }
   if (!hoja) render();
@@ -117,13 +150,13 @@ function enMes(c, m) {
 }
 const compsMes = m => S.compromisos.map(c => enMes(c, m)).filter(Boolean);
 const ingresosMes = m => S.ingresos.map(i => enMes(i, m)).filter(Boolean);
-const gastosMes = m => S.gastos.filter(g => g.fecha.startsWith(m));
+const gastosMes = m => S.gastos.filter(g => mesDe(g.fecha) === m);
 const totalComps = m => sum(compsMes(m), x => x.monto);
 const totalIngresos = m => sum(ingresosMes(m), x => x.monto);
 // Lo pagado con un medio "ajeno" (ej. la tarjeta de comida del trabajo) se anota pero no cuenta como gasto propio.
 const propio = g => (S.cuentas.find(c => c.id === g.cuentaId) || {}).tipo !== 'ajeno';
 // Plata que salió de tu bolsillo hacia otros en el mes (prestado menos devuelto). Negativo si te devolvieron más.
-const prestadoNeto = m => sum(S.deudores || [], p => sum(p.movs.filter(x => x.fecha.startsWith(m)), x => x.monto));
+const prestadoNeto = m => sum(S.deudores || [], p => sum(p.movs.filter(x => mesDe(x.fecha) === m), x => x.monto));
 const totalGastos = m => sum(gastosMes(m).filter(propio), g => g.monto);
 const cuenta = id => S.cuentas.find(c => c.id === id) || { id, nombre: 'Sin cuenta', tipo: 'contado' };
 const categoria = id => S.categorias.find(c => c.id === id) || { id, nombre: 'Otros', emoji: '📦' };
@@ -139,7 +172,7 @@ function deudaDesde(m) {
 
 /* ---------- vistas ---------- */
 function render() {
-  const actual = ym === hoy().slice(0, 7);
+  const actual = ym === mesActual();
   $('#mes-label').innerHTML = `${mesNombre(ym)} ${ym.slice(0, 4)}${actual ? '' : '<small>volver a hoy</small>'}`;
   for (const b of $('#tabs').children) b.classList.toggle('on', b.dataset.tab === (tab === 'deudor' ? 'plan' : tab));
   $('#view').innerHTML = ({ inicio: vInicio, mensual: vMensual, resumen: vResumen, plan: vPlan, ajustes: vAjustes, buscar: vBuscar, deudor: vDeudor, importar: vImportar })[tab]();
@@ -198,8 +231,8 @@ function vDetectados() {
 // Tarjetas con algo sin pagar que vencen en los próximos 7 días (o ya vencieron).
 // Fijos con día de cobro que todavía no están marcados como pagados y se cobran en los próximos 3 días (o ya debieron cobrarse).
 function cobros() {
-  const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
-  return compsMes(act).filter(x => x.c.dia && !pagos[x.c.id] && x.c.dia - dia <= 3).map(x => ({ x, dias: x.c.dia - dia })).sort((a, b) => a.dias - b.dias);
+  const act = mesActual(), pagos = S.pagos[act] || {};
+  return compsMes(act).filter(x => x.c.dia && !pagos[x.c.id]).map(x => ({ x, dias: diasEntre(hoy(), fechaDia(act, x.c.dia)) })).filter(c => c.dias <= 3).sort((a, b) => a.dias - b.dias);
 }
 function vCobros() {
   const cs = cobros();
@@ -210,23 +243,23 @@ function vCobros() {
     <span class="amt num neg">${fmt(c.x.monto)}</span></div>`).join('')}</div>`;
 }
 function vencimientos() {
-  const act = hoy().slice(0, 7), dia = Number(hoy().slice(8)), pagos = S.pagos[act] || {};
+  const act = mesActual(), pagos = S.pagos[act] || {};
   return S.cuentas.filter(c => c.vence).map(c => {
     const falta = sum(compsMes(act).filter(x => x.c.cuentaId === c.id && !pagos[x.c.id]), x => x.monto);
-    return { c, falta, dias: c.vence - dia };
+    return { c, falta, dias: diasEntre(hoy(), fechaDia(act, c.vence)) };
   }).filter(v => v.falta > 0 && v.dias <= 7).sort((a, b) => a.dias - b.dias);
 }
 
 function vInicio() {
   const ing = totalIngresos(ym), comp = totalComps(ym), gas = totalGastos(ym);
   const pres = prestadoNeto(ym), queda = ing - comp - gas - pres;
-  const gs = [...gastosMes(ym), ...comprasCredito().filter(g => g.fecha.startsWith(ym))].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
+  const gs = [...gastosMes(ym), ...comprasCredito().filter(g => mesDe(g.fecha) === ym)].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   let presu = '';
   if (S.presupuesto > 0) {
     const pct = Math.min(100, gas / S.presupuesto * 100), libre = S.presupuesto - gas;
     let porDia = '';
-    if (ym === hoy().slice(0, 7) && libre > 0) {
-      const d = new Date(), dias = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate() + 1;
+    if (ym === mesActual() && libre > 0) {
+      const dias = Math.max(1, diasEntre(hoy(), finPeriodo(ym)));
       porDia = `<div class="kv"><span>Podés gastar por día</span><span class="num pos">${fmt(libre / dias)}</span></div>`;
     }
     presu = `<div class="card pad">
@@ -249,13 +282,14 @@ function vInicio() {
   const aviso = hayDatos && dias >= 30 ? `<div class="card pad aviso"><p>${dias === Infinity ? 'Todavía no guardaste ningún respaldo.' : `Hace ${dias} días que no guardás un respaldo.`} Tus datos viven solo en este teléfono.</p><button class="btn" data-act="respaldar">Guardar respaldo ahora</button></div>` : '';
   const frec = frecuentes();
   const rep = frec.length ? `<div class="rep">${frec.map(g => `<button data-act="repetir" data-id="${g.id}">${esc(categoria(g.cat).emoji)} ${esc(g.desc)}</button>`).join('')}</div>` : '';
-  const venc = ym === hoy().slice(0, 7) ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num neg"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
+  const venc = ym === mesActual() ? vencimientos().map(v => `<button class="card pad aviso vto" data-act="ir-mensual"><span>⚠</span><span class="grow"><b>${esc(v.c.nombre)}</b> ${v.dias < 0 ? `venció hace ${-v.dias} ${v.dias === -1 ? 'día' : 'días'}` : v.dias === 0 ? 'vence hoy' : v.dias === 1 ? 'vence mañana' : `vence en ${v.dias} días`}</span><span class="num neg"><b>${fmt(v.falta)}</b></span></button>`).join('') : '';
   const buscar = `<button class="btn line" data-act="ir-importar">Importar captura de Mercado Pago</button>` + (S.gastos.length + S.compromisos.length ? `<button class="btn line" data-act="ir-buscar">Buscar en todos los movimientos</button>` : '');
-  return `${aviso}${venc}${ym === hoy().slice(0, 7) ? vDetectados() : ''}<section class="hero">
+  return `${aviso}${venc}${ym === mesActual() ? vDetectados() : ''}<section class="hero">
       <div class="lbl">Te queda este mes</div>
       <div class="big num ${queda < 0 ? 'neg' : 'pos'}">${fmt(queda)}</div>
       <div class="sub">Ingresos ${fmt(ing)} · Fijos y cuotas ${fmt(comp)}${pres ? ` · ${pres > 0 ? 'Prestado sin devolver' : 'Te devolvieron'} ${fmt(Math.abs(pres))}` : ''}</div>
-    </section>${rep}${presu}${ym === hoy().slice(0, 7) ? vCobros() : ''}${lista}${buscar}`;
+      ${(S.periodo?.modo || 'calendario') !== 'calendario' ? `<div class="sub">Del ${fechaCorta(inicioPeriodo(ym))} al ${fechaCorta(addDias(finPeriodo(ym), -1))}</div>` : ''}
+    </section>${rep}${presu}${ym === mesActual() ? vCobros() : ''}${lista}${buscar}`;
 }
 
 const filtro = { q: '', cat: '', cta: '' };
@@ -295,7 +329,7 @@ function vMensual() {
   if (ing) {
     // Lo que queda después de los fijos, y lo que queda si además se aparta el ahorro del simulador.
     const libre = ing - total, pct = S.sim?.pct ?? 30, ahorro = Math.round(Math.max(0, libre) * pct / 100), conAhorro = libre - ahorro;
-    const dias = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate();
+    const dias = diasPeriodo(ym);
     html += `<div class="card">
       <div class="row"><span class="grow">Ingresos de ${mesNombre(ym)}</span><span class="amt num pos">${fmt(ing)}</span></div>
       <div class="row total"><span class="grow">Disponible después de los fijos</span><span class="amt num ${libre < 0 ? 'neg' : 'pos'}">${fmt(libre)}</span></div>
@@ -370,10 +404,10 @@ function vResumen() {
 // Lo que se proyecta ahorrar en un mes: ingresos menos compromisos y gastos del día a día.
 // Cuánto gastás por mes en el día a día, según lo que de verdad anotaste; si todavía no hay datos, el tope.
 function gastoRef() {
-  const act = hoy().slice(0, 7), pasados = [];
+  const act = mesActual(), pasados = [];
   for (let i = 1; i <= 3; i++) { const t = totalGastos(addYm(act, -i)); if (t > 0) pasados.push(t); }
   if (pasados.length) return { monto: Math.round(sum(pasados, x => x) / pasados.length), fuente: pasados.length === 1 ? 'lo que gastaste el mes pasado' : `promedio real de ${pasados.length} meses` };
-  const dia = Number(hoy().slice(8)), t = totalGastos(act), dias = new Date(Number(act.slice(0, 4)), Number(act.slice(5)), 0).getDate();
+  const dia = diasEntre(inicioPeriodo(act), hoy()) + 1, t = totalGastos(act), dias = diasPeriodo(act);
   if (dia >= 7 && t > 0) {
     // Proyecta el resto del mes con el ritmo de los gastos comunes; los gastos grandes y excepcionales
     // (una veterinaria, un viaje) cuentan una sola vez y no se multiplican por los días que faltan.
@@ -384,7 +418,7 @@ function gastoRef() {
   return { monto: S.presupuesto, fuente: 'tu tope' };
 }
 function ahorroEstimado(m) {
-  const ref = gastoRef().monto, variables = m === hoy().slice(0, 7) ? Math.max(ref, totalGastos(m)) : ref;
+  const ref = gastoRef().monto, variables = m === mesActual() ? Math.max(ref, totalGastos(m)) : ref;
   return totalIngresos(m) - totalComps(m) - variables - prestadoNeto(m);
 }
 
@@ -411,7 +445,7 @@ function vSim() {
     <div id="sim-res">${simResultado(pct)}</div></div>`;
 }
 function simResultado(pct) {
-  const act = hoy().slice(0, 7), desde = ym < act ? act : ym, d = dolarAhorro(), ref = gastoRef(), M = S.meta;
+  const act = mesActual(), desde = ym < act ? act : ym, d = dolarAhorro(), ref = gastoRef(), M = S.meta;
   const usd = n => d ? 'US$ ' + Math.round(n / d).toLocaleString('es-AR') : '—';
   let acum = ahorradoHasta(addYm(desde, -1)), filas = '', mMin = null, mTot = null, primero = null;
   for (let i = 0; i < 24; i++) {
@@ -423,7 +457,7 @@ function simResultado(pct) {
     if (i < 6) filas += `<tr><td>${mesCorto(m)}</td><td class="num pos">${fmt(a)}</td><td class="num pos"><b>${fmt(acum)}</b></td><td class="num">${usd(acum)}</td></tr>`;
   }
   if (!primero.libre) return `<div class="hint">Cargá tu sueldo en Resumen para poder simular.</div>`;
-  const vivir = primero.libre - primero.a, dias = new Date(Number(desde.slice(0, 4)), Number(desde.slice(5)), 0).getDate();
+  const vivir = primero.libre - primero.a, dias = diasPeriodo(desde);
   const falta = ref.monto - vivir;
   return `<div class="kv"><span>Ahorrás (${mesNombre(desde).slice(0, 3)})</span><span class="num pos"><b>${fmt(primero.a)}</b>${d ? ' · ' + usd(primero.a) : ''}</span></div>
     <div class="kv"><span>Para vivir</span><span class="num pos">${fmt(vivir)} · ${fmt(vivir / dias)} por día</span></div>
@@ -453,7 +487,7 @@ const ahorroReal = m => (S.ahorros || {})[m];
 const ahorradoHasta = m => sum(Object.keys(S.ahorros || {}).filter(k => k <= m), k => S.ahorros[k]);
 // Primer mes en que el acumulado (real + estimado a futuro) alcanza un objetivo.
 function mesQueLlega(objetivo) {
-  const act = hoy().slice(0, 7);
+  const act = mesActual();
   let acum = ahorradoHasta(addYm(act, -1));
   for (let i = 0; i < 60; i++) {
     const m = addYm(act, i);
@@ -472,7 +506,7 @@ function deudas(m) {
 }
 
 function vPlan() {
-  const act = hoy().slice(0, 7), M = S.meta;
+  const act = mesActual(), M = S.meta;
   let html = '';
   if (!M) {
     html += `<div class="empty">Definí una meta de ahorro (por ejemplo, la mudanza) y la app te muestra cuánto llevás y cuándo llegás.</div>
@@ -614,7 +648,11 @@ function formAhorro(m) {
 }
 
 function vAjustes() {
-  return `<h2><span>Tope mensual del día a día</span></h2>
+  const per = S.periodo?.modo || 'calendario';
+  return `<h2><span>Cómo se cuenta el mes</span></h2>
+    <div class="card"><button class="row" data-act="editar-periodo"><span class="grow">${per === 'habil' ? 'De cobro a cobro (último día hábil)' : per === 'dia' ? `Desde el día ${S.periodo.dia} de cada mes` : 'Mes calendario'}</span><span class="badge">${fechaCorta(inicioPeriodo(mesActual()))} al ${fechaCorta(addDias(finPeriodo(mesActual()), -1))}</span></button></div>
+    <div class="hint">Define qué gastos entran en cada mes. Si cobrás a fin de mes, lo que gastes después de cobrar cuenta para el mes siguiente.</div>
+    <h2><span>Tope mensual del día a día</span></h2>
     <div class="card"><button class="row" data-act="editar-presu"><span class="grow">Tope</span><span class="amt num">${S.presupuesto ? fmt(S.presupuesto) : 'Sin tope'}</span></button></div>
     <h2><span>Dólar de referencia</span></h2>
     <div class="card"><button class="row" data-act="editar-dolar"><span class="grow">Valor en ${mesNombre(ym)}</span><span class="amt num">${dolarMes(ym) ? fmt(dolarMes(ym)) : 'Sin cargar'}</span></button></div>
@@ -799,7 +837,7 @@ async function formGasto(g, extra = {}) {
       if (img) await db.set('img:' + id, img);
       if (v.clase === 'ingreso') {
         // Plata que entró (ej. una transferencia recibida): va a los ingresos de ese mes.
-        const mes = (v.fecha || hoy()).slice(0, 7);
+        const mes = mesDe(v.fecha || hoy());
         S.ingresos.push({ id, nombre: v.desc || 'Ingreso', monto: v.monto, tipo: 'unico', inicio: mes, total: 1, fecha: v.fecha, img: !!img });
         toast(`Ingreso de ${fmt(v.monto)} anotado en ${mesNombre(mes)}`);
         return;
@@ -938,6 +976,21 @@ function formDolar() {
     },
   });
 }
+function formPeriodo() {
+  abrir({
+    title: 'Cómo se cuenta el mes', foco: false,
+    fields: [
+      { name: 'modo', type: 'chips', value: S.periodo?.modo || 'calendario', options: [{ v: 'calendario', l: 'Mes calendario (del 1 al último día)' }, { v: 'habil', l: 'De cobro a cobro: cobro el último día hábil' }, { v: 'dia', l: 'Desde un día fijo del mes' }] },
+      { name: 'dia', type: 'number', label: 'Día en que arranca tu mes', value: S.periodo?.dia || '', placeholder: 'Ej: 5', showIf: v => v.modo === 'dia' },
+      { name: 'nota', type: 'nota', texto: v => v.modo === 'habil' ? 'Cada mes va desde el último día hábil del mes anterior hasta el día antes del próximo cobro. No tiene en cuenta feriados.' : v.modo === 'dia' ? 'Cada mes va desde ese día hasta el día anterior del mes siguiente.' : 'Cada mes va del 1 al último día.' },
+    ],
+    onSave: v => {
+      if (v.modo === 'dia' && !(v.dia >= 1 && v.dia <= 28)) return 'Poné un día entre 1 y 28';
+      S.periodo = { modo: v.modo, dia: v.modo === 'dia' ? Math.round(v.dia) : 0 };
+      ym = mesActual();
+    },
+  });
+}
 function formPresu() {
   abrir({
     title: 'Tope mensual del día a día',
@@ -1005,6 +1058,7 @@ async function importar(file) {
   } catch { return toast('Ese archivo no es un respaldo válido'); }
   confirmar('Cargar respaldo', `El respaldo tiene ${d.gastos.length} gastos, ${d.compromisos.length} cuotas o fijos y ${(d.ingresos || []).length} ingresos. Reemplaza todo lo que hay cargado ahora en la app.`, 'Reemplazar todo', () => {
     S = { ...inicial(), ...d, ultimoRespaldo: hoy() };
+    ym = mesActual();
     toast('Respaldo cargado');
   });
 }
@@ -1120,11 +1174,11 @@ function sugerir(filas) {
     const par = filas.find(x => !x.sel && x.monto === -d.monto && x.fecha === d.fecha && normal(x.nombre) === normal(d.nombre));
     if (par) { par.sel = d.sel = 'ignorar'; par.motivo = d.motivo = 'se anulan entre sí'; }
   }
-  const ajena = cuentaAjena(), act = hoy().slice(0, 7);
+  const ajena = cuentaAjena(), act = mesActual();
   for (const r of filas) {
     if (r.sel) continue;
     const regla = (S.reglas || {})[claveRegla(r)];
-    const fijo = r.monto < 0 && compsMes(r.fecha.slice(0, 7)).find(x => x.c.tipo === 'mensual' && Math.abs(x.monto - r.abs) <= Math.max(50, x.monto * .12) && (normal(x.c.nombre).includes(normal(r.nombre).slice(0, 5)) || normal(r.nombre).includes(normal(x.c.nombre).slice(0, 5))));
+    const fijo = r.monto < 0 && compsMes(mesDe(r.fecha)).find(x => x.c.tipo === 'mensual' && Math.abs(x.monto - r.abs) <= Math.max(50, x.monto * .12) && (normal(x.c.nombre).includes(normal(r.nombre).slice(0, 5)) || normal(r.nombre).includes(normal(x.c.nombre).slice(0, 5))));
     if (yaAnotado(r)) { r.sel = 'ignorar'; r.motivo = 'ya está anotado'; }
     else if (fijo) r.sel = 'fijo:' + fijo.c.id;
     else if (regla) r.sel = regla;
@@ -1140,7 +1194,7 @@ function opcionesImp(r) {
     for (const c of cats) o.push(['cat:' + c.id, `${c.emoji} ${c.nombre}`]);
     if (cuentaAjena()) o.push(['ajeno', `No cuenta (${cuentaAjena().nombre})`]);
     for (const p of deu) o.push(['deu:' + p.id, `Presté o pagué por ${p.nombre}`]);
-    for (const x of compsMes(r.fecha.slice(0, 7)).filter(x => x.c.tipo === 'mensual')) o.push(['fijo:' + x.c.id, `Es el fijo "${x.c.nombre}" (marcar pagado)`]);
+    for (const x of compsMes(mesDe(r.fecha)).filter(x => x.c.tipo === 'mensual')) o.push(['fijo:' + x.c.id, `Es el fijo "${x.c.nombre}" (marcar pagado)`]);
   } else {
     o.push(['ingreso', 'Ingreso']);
     for (const p of deu) o.push(['deu:' + p.id, `Me devolvió ${p.nombre}`]);
@@ -1201,7 +1255,7 @@ async function aplicarImportacion() {
   let n = 0;
   const contado = billetera(), ajena = cuentaAjena();
   for (const r of imp.filas) {
-    const [que, id] = r.sel.split(':'), mes = r.fecha.slice(0, 7);
+    const [que, id] = r.sel.split(':'), mes = mesDe(r.fecha);
     if (r.tocado || !r.motivo) (S.reglas ??= {})[claveRegla(r)] = r.sel; // recuerda la elección para ese comercio o persona
     if (que === 'ignorar') continue;
     n++;
@@ -1333,7 +1387,7 @@ function toast(msg) {
 const acciones = {
   'mes-prev': () => { ym = addYm(ym, -1); },
   'mes-next': () => { ym = addYm(ym, 1); },
-  'mes-hoy': () => { ym = hoy().slice(0, 7); },
+  'mes-hoy': () => { ym = mesActual(); },
   'nuevo-gasto': () => formGasto(),
   'editar-gasto': id => formGasto(S.gastos.find(g => g.id === id)),
   'nuevo-comp': () => formComp(null, false),
@@ -1361,7 +1415,7 @@ const acciones = {
     });
   },
   'logo-quitar': () => { hoja.logo = ''; pintarLogo(); },
-  'pagar-hoy': id => { (S.pagos[hoy().slice(0, 7)] ??= {})[id] = true; guardar(); },
+  'pagar-hoy': id => { (S.pagos[mesActual()] ??= {})[id] = true; guardar(); },
   'ir-mensual': () => { tab = 'mensual'; },
   'ir-buscar': () => { tab = 'buscar'; window.scrollTo(0, 0); },
   'ir-importar': () => { tab = 'importar'; window.scrollTo(0, 0); },
@@ -1374,6 +1428,7 @@ const acciones = {
   'nueva-cat': () => formCat(),
   'editar-cat': id => formCat(S.categorias.find(c => c.id === id)),
   'editar-presu': () => formPresu(),
+  'editar-periodo': () => formPeriodo(),
   'editar-dolar': () => formDolar(),
   'editar-dolar-ahorro': () => formDolarAhorro(),
   'actualizar': actualizarApp,
@@ -1446,7 +1501,7 @@ document.addEventListener('change', async e => {
 
 /* ---------- arranque ---------- */
 (async () => {
-  try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; } catch { toast('No se pudo leer lo guardado'); }
+  try { const g = await db.get('estado'); if (g) S = { ...inicial(), ...g }; ym = mesActual(); } catch { toast('No se pudo leer lo guardado'); }
   render();
   arrancado = true;
   const antes = Number(sessionStorage.getItem('venia-de'));
