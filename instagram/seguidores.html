@@ -60,13 +60,14 @@ a { color: var(--accent); }
 .note.ok { background: var(--gain-soft); color: var(--gain); }
 .note.err { background: var(--lost-soft); color: var(--lost); }
 .note a { color: inherit; font-weight: 600; }
+.note .row-btns { margin-top: 0.6rem; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .tab {
   text-align: left; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
   border-radius: 0.85rem; padding: 0.7rem 0.8rem; cursor: pointer; font: inherit; min-width: 0;
-  display: flex; flex-direction: column; gap: 0.1rem;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 0.1rem;
 }
 .tab .n { font: 800 1.7rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .tab .l { font-size: 0.82rem; color: var(--muted); line-height: 1.25; }
@@ -368,7 +369,7 @@ function render() {
   const ns = notes.slice();
   if (isDemo) ns.unshift({ kind: "demo", html: "<b>Datos de ejemplo.</b> Así se ve la app con tu cuenta cargada. Importá tu archivo de Instagram más abajo para reemplazarlos." });
   else if (days >= 7 && !pending) ns.push({ kind: "warn", html: "Tus datos tienen " + days + ' días. <a href="https://accountscenter.instagram.com/info_and_permissions/dyi/" target="_blank" rel="noopener">Pedí una exportación nueva</a> para ver los cambios.' });
-  $("notes").innerHTML = ns.map(n => '<div class="note ' + n.kind + '" role="status">' + n.html + "</div>").join("");
+  $("notes").innerHTML = ns.map(n => '<div class="note ' + n.kind + '" role="status"><div>' + n.html + "</div></div>").join("");
 
   const counts = { lost: c.lost, nofollowback: c.nfb.length, fans: c.fans.length, new: c.gained };
   $("tabs").innerHTML = TABS.map(([k, l]) =>
