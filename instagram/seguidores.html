@@ -1,0 +1,470 @@
+<title>Radar de seguidores</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: una columna de celular (máx. 34rem). Arriba, el estado de la última importación; después cuatro contadores que son a la vez resumen y pestañas; abajo la lista de cuentas de la pestaña elegida, y al final importar, instrucciones y respaldo. */
+:root {
+  --bg: #F4F3F8;
+  --surface: #FFFFFF;
+  --ink: #1B1730;
+  --muted: #645F7A;
+  --line: #DDDAE8;
+  --soft: #EAE8F2;
+  --accent: #5B3FD6;
+  --on-accent: #FFFFFF;
+  --lost: #B3261E;
+  --lost-soft: #FBE9E7;
+  --gain: #17734A;
+  --gain-soft: #E2F3EA;
+  --warn-soft: #FFF2D6;
+  --warn-ink: #6B4A00;
+  --font-display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #110F1C; --surface: #1B182B; --ink: #EEECF7; --muted: #A09BB8; --line: #2E2A45; --soft: #262239;
+    --accent: #A592FF; --on-accent: #140F2E;
+    --lost: #FF8A80; --lost-soft: #3A1A1C; --gain: #6FD6A2; --gain-soft: #14301F;
+    --warn-soft: #3A2E10; --warn-ink: #FFD98A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #110F1C; --surface: #1B182B; --ink: #EEECF7; --muted: #A09BB8; --line: #2E2A45; --soft: #262239;
+  --accent: #A592FF; --on-accent: #140F2E;
+  --lost: #FF8A80; --lost-soft: #3A1A1C; --gain: #6FD6A2; --gain-soft: #14301F;
+  --warn-soft: #3A2E10; --warn-ink: #FFD98A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 1rem/1.5 var(--font-ui);
+  padding-block: 1.25rem 3rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app { max-width: 34rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+h1 { font: 800 1.9rem/1.05 var(--font-display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+h2 { font: 700 1.15rem/1.2 var(--font-display); margin: 0; }
+p { margin: 0; }
+a { color: var(--accent); }
+.sub { color: var(--muted); font-size: 0.9rem; }
+.totals { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.totals b { color: var(--ink); font-weight: 600; }
+.note { border-radius: 0.75rem; padding: 0.75rem 0.9rem; font-size: 0.92rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.note.demo, .note.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.note.ok { background: var(--gain-soft); color: var(--gain); }
+.note.err { background: var(--lost-soft); color: var(--lost); }
+.note a { color: inherit; font-weight: 600; }
+.row-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.tab {
+  text-align: left; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 0.85rem; padding: 0.7rem 0.8rem; cursor: pointer; font: inherit; min-width: 0;
+  display: flex; flex-direction: column; gap: 0.1rem;
+}
+.tab .n { font: 800 1.7rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tab .l { font-size: 0.82rem; color: var(--muted); line-height: 1.25; }
+.tab[data-k="lost"] .n { color: var(--lost); }
+.tab[data-k="new"] .n { color: var(--gain); }
+.tab[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tab[aria-selected="true"] .l { color: var(--ink); font-weight: 600; }
+
+.panel { display: flex; flex-direction: column; gap: 0.6rem; }
+.panel-head { display: flex; flex-direction: column; gap: 0.2rem; }
+input[type="search"] {
+  width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 0.7rem; padding: 0.6rem 0.8rem;
+}
+.group { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding-top: 0.5rem; }
+ul.list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 0.85rem; overflow: hidden; }
+ul.list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; border-top: 1px solid var(--line); min-width: 0; }
+ul.list li:first-child { border-top: 0; }
+ul.list a.u { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink); text-decoration: none; font-weight: 500; }
+ul.list a.u::before { content: "@"; color: var(--muted); }
+.chip { font-size: 0.75rem; font-weight: 600; border-radius: 99px; padding: 0.15rem 0.55rem; background: var(--gain-soft); color: var(--gain); white-space: nowrap; }
+.empty { color: var(--muted); font-size: 0.92rem; padding: 0.9rem; background: var(--surface); border: 1px dashed var(--line); border-radius: 0.85rem; }
+
+button, .btn {
+  font: 600 0.92rem/1.2 var(--font-ui); border-radius: 0.7rem; padding: 0.65rem 0.95rem; cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; text-align: center;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); padding: 0.85rem 1.1rem; font-size: 1rem; }
+button.mini { padding: 0.3rem 0.6rem; font-size: 0.78rem; border-radius: 0.5rem; color: var(--muted); }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-weight: 500; }
+button.danger { color: var(--lost); }
+:is(button, a, input, summary, .btn):focus-visible, label.btn:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+section.card { background: var(--surface); border: 1px solid var(--line); border-radius: 0.85rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+details summary { cursor: pointer; font-weight: 600; }
+details ol { margin: 0.6rem 0 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.93rem; }
+footer { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.6rem; }
+</style>
+
+<div class="app">
+  <header style="display:flex;flex-direction:column;gap:0.35rem">
+    <h1>Radar de seguidores</h1>
+    <p class="sub" id="status"></p>
+    <p class="totals" id="totals"></p>
+  </header>
+
+  <div id="notes" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+
+  <div class="tabs" role="tablist" id="tabs"></div>
+
+  <div class="panel" id="panel">
+    <div class="panel-head"><h2 id="panelTitle"></h2><p class="sub" id="panelHelp"></p></div>
+    <label class="vh" for="q">Buscar cuenta</label>
+    <input type="search" id="q" placeholder="Buscar cuenta" autocomplete="off" autocapitalize="off">
+    <div id="list"></div>
+  </div>
+
+  <section class="card">
+    <h2>Actualizar datos</h2>
+    <p class="sub">Importá el archivo que te da Instagram. La app lo compara con la importación anterior y te muestra los cambios.</p>
+    <label class="btn primary" for="file">Importar archivo de Instagram
+      <input class="vh" type="file" id="file" multiple accept=".zip,.json,.html,application/zip,application/json,text/html">
+    </label>
+    <details id="howto">
+      <summary>Cómo pedirle el archivo a Instagram</summary>
+      <ol>
+        <li>Abrí <a href="https://accountscenter.instagram.com/info_and_permissions/dyi/" target="_blank" rel="noopener">Descargar tu información</a> (o en Instagram: Configuración → Centro de cuentas → Tu información y permisos).</li>
+        <li>Tocá <b>Descargar o transferir información</b>, elegí tu cuenta y después <b>Parte de tu información</b>.</li>
+        <li>Marcá solo <b>Seguidores y seguidos</b>. Así el archivo pesa poco y llega en minutos.</li>
+        <li>Elegí <b>Descargar en el dispositivo</b>.</li>
+        <li>En <b>Intervalo de fechas</b> elegí <b>Desde el principio</b>. Con otro intervalo la lista llega incompleta y vas a ver bajas falsas.</li>
+        <li>En <b>Formato</b> elegí <b>JSON</b> (HTML también sirve) y tocá <b>Crear archivos</b>.</li>
+        <li>Cuando Instagram te avise por mail, descargá el ZIP e importalo acá sin descomprimir.</li>
+      </ol>
+    </details>
+  </section>
+
+  <footer>
+    <p>Tus listas se guardan solo en este navegador. La app no pide tu contraseña ni se conecta con Instagram. Si borrás los datos del navegador se pierde el historial, así que conviene guardar un respaldo cada tanto.</p>
+    <div class="row-btns">
+      <button type="button" id="backup" hidden>Guardar respaldo</button>
+      <label class="btn" for="restore">Restaurar respaldo
+        <input class="vh" type="file" id="restore" accept=".json,application/json">
+      </label>
+      <button type="button" class="danger" id="wipe">Borrar todo</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+const KEY = "radar-seguidores-v1";
+const DAY = 864e5;
+const $ = id => document.getElementById(id);
+const USER_RE = /^[a-z0-9._]{1,30}$/;
+const RESERVED = new Set(["accounts", "explore", "p", "reel", "reels", "stories", "direct", "about", "legal", "_u"]);
+
+/* ---------- estado ---------- */
+// state = { v:1, snap:{t, followers:[], following:[]}, events:[{t, p, lost:[], gained:[]}], hidden:[] }
+let state = null, isDemo = false, tab = "lost", showHidden = false, limit = 200, notes = [], pending = null, wipeArmed = false;
+
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (valid(s)) return s; } catch (e) {}
+  return null;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+  catch (e) { note("err", "No se pudo guardar en este navegador (almacenamiento bloqueado o lleno). Los datos se ven ahora pero se van a perder al cerrar: guardá un respaldo."); return false; }
+}
+function valid(s) {
+  return s && s.v === 1 && s.snap && Array.isArray(s.snap.followers) && Array.isArray(s.snap.following) && Array.isArray(s.events);
+}
+function demo() {
+  const now = Date.now();
+  const mk = a => a.split(" ");
+  return { v: 1, hidden: [],
+    snap: { t: now - 2 * DAY,
+      followers: mk("ejemplo.lucia ejemplo.martin ejemplo.sofi ejemplo.tomas ejemplo.cami ejemplo.nico ejemplo.vale ejemplo.juli"),
+      following: mk("ejemplo.lucia ejemplo.martin ejemplo.sofi ejemplo.banda ejemplo.revista ejemplo.fede ejemplo.cami") },
+    events: [
+      { t: now - 2 * DAY, p: now - 11 * DAY, lost: mk("ejemplo.fede ejemplo.agus"), gained: mk("ejemplo.juli ejemplo.vale") },
+      { t: now - 11 * DAY, p: now - 25 * DAY, lost: mk("ejemplo.tomas"), gained: mk("ejemplo.nico ejemplo.tomas") } ] };
+}
+
+/* ---------- lectura de ZIP / JSON / HTML ---------- */
+function wanted(name) {
+  const base = name.split("/").pop().toLowerCase();
+  if (/^followers(_\d+)?\.(json|html)$/.test(base)) return "followers";
+  if (/^following\.(json|html)$/.test(base)) return "following";
+  return null;
+}
+async function zipEntries(file) {
+  const size = file.size, tailLen = Math.min(size, 65557);
+  const tail = new DataView(await file.slice(size - tailLen).arrayBuffer());
+  let i = tailLen - 22;
+  while (i >= 0 && tail.getUint32(i, true) !== 0x06054b50) i--;
+  if (i < 0) throw new Error("no es un ZIP válido");
+  let cdSize = tail.getUint32(i + 12, true), cdOff = tail.getUint32(i + 16, true);
+  if (cdOff === 0xFFFFFFFF || cdSize === 0xFFFFFFFF) {
+    if (i < 20 || tail.getUint32(i - 20, true) !== 0x07064b50) throw new Error("ZIP demasiado grande");
+    const z = Number(tail.getBigUint64(i - 12, true));
+    const r = new DataView(await file.slice(z, z + 56).arrayBuffer());
+    cdSize = Number(r.getBigUint64(40, true)); cdOff = Number(r.getBigUint64(48, true));
+  }
+  const buf = await file.slice(cdOff, cdOff + cdSize).arrayBuffer();
+  const cd = new DataView(buf), dec = new TextDecoder();
+  const out = [];
+  for (let p = 0; p + 46 <= cd.byteLength && cd.getUint32(p, true) === 0x02014b50;) {
+    const method = cd.getUint16(p + 10, true);
+    let comp = cd.getUint32(p + 20, true), uncomp = cd.getUint32(p + 24, true);
+    const nl = cd.getUint16(p + 28, true), el = cd.getUint16(p + 30, true), cl = cd.getUint16(p + 32, true);
+    let off = cd.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nl));
+    for (let e = p + 46 + nl, end = e + el; e + 4 <= end;) {
+      const id = cd.getUint16(e, true), len = cd.getUint16(e + 2, true);
+      if (id === 1) {
+        let q = e + 4;
+        if (uncomp === 0xFFFFFFFF) { uncomp = Number(cd.getBigUint64(q, true)); q += 8; }
+        if (comp === 0xFFFFFFFF) { comp = Number(cd.getBigUint64(q, true)); q += 8; }
+        if (off === 0xFFFFFFFF) { off = Number(cd.getBigUint64(q, true)); }
+      }
+      e += 4 + len;
+    }
+    out.push({ name, method, comp, off });
+    p += 46 + nl + el + cl;
+  }
+  return out;
+}
+async function zipText(file, ent) {
+  const h = new DataView(await file.slice(ent.off, ent.off + 30).arrayBuffer());
+  if (h.getUint32(0, true) !== 0x04034b50) throw new Error("ZIP dañado");
+  const start = ent.off + 30 + h.getUint16(26, true) + h.getUint16(28, true);
+  const blob = file.slice(start, start + ent.comp);
+  if (ent.method === 0) return blob.text();
+  if (ent.method !== 8) throw new Error("compresión no soportada");
+  if (typeof DecompressionStream === "undefined") throw new Error("este navegador no puede abrir ZIP; descomprimilo y elegí los archivos followers y following");
+  return new Response(blob.stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+}
+function userFromHref(h) {
+  const m = /instagram\.com\/(?:_u\/)?([A-Za-z0-9._]+)/.exec(h || "");
+  return m ? m[1] : "";
+}
+function clean(u) {
+  u = String(u || "").trim().replace(/^@/, "").toLowerCase();
+  return USER_RE.test(u) && !RESERVED.has(u) ? u : "";
+}
+function parseList(text, name) {
+  const out = [];
+  if (/\.html?$/i.test(name)) {
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    doc.querySelectorAll('a[href*="instagram.com"]').forEach(a => { const u = clean(userFromHref(a.getAttribute("href"))); if (u) out.push(u); });
+    return out;
+  }
+  const data = JSON.parse(text);
+  const arr = Array.isArray(data) ? data : (Object.values(data || {}).find(Array.isArray) || []);
+  for (const it of arr) {
+    const s = (it && it.string_list_data && it.string_list_data[0]) || {};
+    const u = clean(s.value) || clean(it && it.title) || clean(userFromHref(s.href));
+    if (u) out.push(u);
+  }
+  return out;
+}
+async function readFiles(files) {
+  const got = { followers: null, following: null };
+  let t = 0;
+  const add = (kind, list) => { got[kind] = (got[kind] || []).concat(list); };
+  for (const f of files) {
+    t = Math.max(t, f.lastModified || 0);
+    if (/\.zip$/i.test(f.name)) {
+      for (const ent of await zipEntries(f)) {
+        const kind = wanted(ent.name);
+        if (kind) add(kind, parseList(await zipText(f, ent), ent.name));
+      }
+    } else {
+      const kind = wanted(f.name);
+      if (kind) add(kind, parseList(await f.text(), f.name));
+    }
+  }
+  const uniq = a => [...new Set(a)].sort();
+  return { t, followers: got.followers && uniq(got.followers), following: got.following && uniq(got.following) };
+}
+
+/* ---------- importar ---------- */
+const fmt = t => new Date(t).toLocaleDateString("es", { day: "numeric", month: "short", year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+function note(kind, html, sticky) { notes.push({ kind, html, sticky }); }
+
+async function onImport(files) {
+  notes = []; pending = null;
+  let r;
+  try { r = await readFiles(files); }
+  catch (e) { note("err", "No se pudo leer el archivo: " + esc(e.message || "error") + "."); return render(); }
+  if (!r.followers || !r.following) {
+    const miss = [!r.followers && "seguidores (followers_1)", !r.following && "seguidos (following)"].filter(Boolean).join(" ni la de ");
+    note("err", "El archivo no trae la lista de " + miss + ". Al pedir la exportación marcá <b>Seguidores y seguidos</b>. Si subís archivos sueltos, elegí los dos juntos.");
+    return render();
+  }
+  const prev = isDemo ? null : state;
+  if (prev && prev.snap.followers.length >= 10 && r.followers.length < prev.snap.followers.length * 0.7) {
+    pending = r;
+    note("warn", "Este archivo trae <b>" + r.followers.length + "</b> seguidores y antes tenías <b>" + prev.snap.followers.length + "</b>. Suele pasar cuando la exportación se pidió con un intervalo de fechas que no es <b>Desde el principio</b>. Si la importás igual, vas a ver muchas bajas falsas." +
+      '<div class="row-btns"><button type="button" data-act="cancel">Descartar archivo</button><button type="button" data-act="force">Importar igual</button></div>');
+    return render();
+  }
+  commit(r);
+}
+function commit(r) {
+  const prev = isDemo ? null : state;
+  let t = r.t && r.t <= Date.now() ? r.t : Date.now();
+  if (prev && t <= prev.snap.t) t = Date.now();
+  const snap = { t, followers: r.followers, following: r.following };
+  notes = []; pending = null;
+  if (!prev) {
+    state = { v: 1, snap, events: [], hidden: [] };
+    note("ok", "Primera importación guardada: " + snap.followers.length + " seguidores y " + snap.following.length + " seguidos. Cuando importes la próxima vas a ver quién dejó de seguirte.");
+    tab = "nofollowback";
+  } else {
+    const was = new Set(prev.snap.followers), now = new Set(snap.followers);
+    const lost = prev.snap.followers.filter(u => !now.has(u)), gained = snap.followers.filter(u => !was.has(u));
+    state = { v: 1, snap, events: [{ t, p: prev.snap.t, lost, gained }].concat(prev.events), hidden: prev.hidden || [] };
+    if (lost.length) { note("err", "Desde el " + fmt(prev.snap.t) + ": <b>" + plural(lost.length, "cuenta dejó", "cuentas dejaron") + " de seguirte</b> y sumaste " + plural(gained.length, "seguidor nuevo", "seguidores nuevos") + "."); tab = "lost"; }
+    else note("ok", "Desde el " + fmt(prev.snap.t) + " nadie dejó de seguirte. Sumaste " + plural(gained.length, "seguidor nuevo", "seguidores nuevos") + ".");
+  }
+  isDemo = false; limit = 200;
+  save(); render();
+}
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---------- vistas ---------- */
+function compute() {
+  const fol = new Set(state.snap.followers), ing = new Set(state.snap.following), hid = new Set(state.hidden || []);
+  const nfbAll = state.snap.following.filter(u => !fol.has(u));
+  return {
+    fol, hid,
+    lost: state.events.reduce((n, e) => n + e.lost.length, 0),
+    gained: state.events.reduce((n, e) => n + e.gained.length, 0),
+    nfb: nfbAll.filter(u => !hid.has(u)), nfbHidden: nfbAll.filter(u => hid.has(u)),
+    fans: state.snap.followers.filter(u => !ing.has(u))
+  };
+}
+const TABS = [
+  ["lost", "Dejaron de seguirte", "Cuentas que te seguían en una importación y en la siguiente ya no. También aparece acá quien desactivó o eliminó su cuenta."],
+  ["nofollowback", "No te siguen de vuelta", "Cuentas que seguís y no te siguen. Con Ocultar sacás de la lista las que no te importan, como marcas o famosos."],
+  ["fans", "No seguís de vuelta", "Cuentas que te siguen y vos no seguís."],
+  ["new", "Seguidores nuevos", "Cuentas que empezaron a seguirte entre una importación y la siguiente."]
+];
+function row(u, extra) {
+  return '<li><a class="u" href="https://www.instagram.com/' + u + '/" target="_blank" rel="noopener">' + u + "</a>" + (extra || "") + "</li>";
+}
+function render() {
+  const c = compute(), q = $("q").value.trim().toLowerCase().replace(/^@/, "");
+  const days = Math.floor((Date.now() - state.snap.t) / DAY);
+  $("status").textContent = isDemo ? "Todavía no importaste nada." :
+    "Última importación: " + fmt(state.snap.t) + (days === 0 ? " (hoy)" : days === 1 ? " (ayer)" : " (hace " + days + " días)") + ".";
+  $("totals").innerHTML = "<span><b>" + state.snap.followers.length + "</b> seguidores</span><span><b>" + state.snap.following.length + "</b> seguidos</span>";
+
+  const ns = notes.slice();
+  if (isDemo) ns.unshift({ kind: "demo", html: "<b>Datos de ejemplo.</b> Así se ve la app con tu cuenta cargada. Importá tu archivo de Instagram más abajo para reemplazarlos." });
+  else if (days >= 7 && !pending) ns.push({ kind: "warn", html: "Tus datos tienen " + days + ' días. <a href="https://accountscenter.instagram.com/info_and_permissions/dyi/" target="_blank" rel="noopener">Pedí una exportación nueva</a> para ver los cambios.' });
+  $("notes").innerHTML = ns.map(n => '<div class="note ' + n.kind + '" role="status">' + n.html + "</div>").join("");
+
+  const counts = { lost: c.lost, nofollowback: c.nfb.length, fans: c.fans.length, new: c.gained };
+  $("tabs").innerHTML = TABS.map(([k, l]) =>
+    '<button type="button" class="tab" role="tab" data-k="' + k + '" aria-selected="' + (k === tab) + '"><span class="n">' + counts[k] + '</span><span class="l">' + l + "</span></button>").join("");
+
+  const def = TABS.find(t => t[0] === tab);
+  $("panelTitle").textContent = def[1]; $("panelHelp").textContent = def[2];
+  const match = u => !q || u.includes(q);
+  let html = "", shown = 0, total = 0;
+  const take = (list, fn) => { let s = ""; for (const u of list) { if (!match(u)) continue; total++; if (shown < limit) { s += fn(u); shown++; } } return s; };
+
+  if (tab === "lost" || tab === "new") {
+    for (const e of state.events) {
+      const s = take(tab === "lost" ? e.lost : e.gained, u => row(u, tab === "lost" && c.fol.has(u) ? '<span class="chip">Volvió a seguirte</span>' : ""));
+      if (s) html += '<div class="group">Entre el ' + fmt(e.p) + " y el " + fmt(e.t) + '</div><ul class="list">' + s + "</ul>";
+    }
+    if (!html) html = '<div class="empty">' + (q ? "Ninguna cuenta coincide con la búsqueda." : state.events.length ? (tab === "lost" ? "Nadie dejó de seguirte entre tus importaciones." : "No sumaste seguidores entre tus importaciones.") : "Hace falta una segunda importación para comparar. Pedí otra exportación en unos días e importala.") + "</div>";
+  } else {
+    const list = tab === "fans" ? c.fans : showHidden ? c.nfbHidden : c.nfb;
+    const s = take(list, u => row(u, tab === "nofollowback" ? '<button type="button" class="mini" data-hide="' + u + '">' + (showHidden ? "Mostrar" : "Ocultar") + "</button>" : ""));
+    html = s ? '<ul class="list">' + s + "</ul>" : '<div class="empty">' + (q ? "Ninguna cuenta coincide con la búsqueda." : "No hay cuentas en esta lista.") + "</div>";
+    if (tab === "nofollowback" && (c.nfbHidden.length || showHidden))
+      html += '<p class="sub"><button type="button" class="link" data-act="hidden">' + (showHidden ? "Volver a la lista" : "Ver ocultas (" + c.nfbHidden.length + ")") + "</button></p>";
+  }
+  if (total > shown) html += '<button type="button" data-act="more">Mostrar más (' + (total - shown) + " restantes)</button>";
+  $("list").innerHTML = html;
+  $("wipe").textContent = wipeArmed ? "Tocá de nuevo para borrar todo" : "Borrar todo";
+  $("wipe").hidden = isDemo;
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id !== "wipe" && wipeArmed) wipeArmed = false;
+  if (b.dataset.k) { tab = b.dataset.k; showHidden = false; limit = 200; return render(); }
+  if (b.dataset.hide) {
+    const u = b.dataset.hide, h = new Set(state.hidden || []);
+    h.has(u) ? h.delete(u) : h.add(u); state.hidden = [...h];
+    if (!isDemo) save();
+    return render();
+  }
+  const act = b.dataset.act;
+  if (act === "more") { limit += 300; render(); }
+  else if (act === "hidden") { showHidden = !showHidden; render(); }
+  else if (act === "cancel") { pending = null; notes = []; render(); }
+  else if (act === "force" && pending) commit(pending);
+});
+$("q").addEventListener("input", () => { limit = 200; render(); });
+$("file").addEventListener("change", async e => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (files.length) { await onImport(files); $("notes").scrollIntoView({ block: "start", behavior: "smooth" }); }
+});
+$("restore").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  notes = [];
+  try {
+    const s = JSON.parse(await f.text());
+    if (!valid(s)) throw 0;
+    const ok = a => a.filter(u => typeof u === "string" && USER_RE.test(u));
+    state = { v: 1, hidden: ok(s.hidden || []),
+      snap: { t: +s.snap.t || Date.now(), followers: ok(s.snap.followers), following: ok(s.snap.following) },
+      events: s.events.map(ev => ({ t: +ev.t || 0, p: +ev.p || 0, lost: ok(ev.lost || []), gained: ok(ev.gained || []) })) };
+    isDemo = false; save();
+    note("ok", "Respaldo restaurado.");
+  } catch (err) { note("err", "Ese archivo no es un respaldo de esta app. Para cargar datos de Instagram usá <b>Importar archivo de Instagram</b>."); }
+  render(); $("notes").scrollIntoView({ block: "start", behavior: "smooth" });
+});
+$("wipe").addEventListener("click", () => {
+  if (!wipeArmed) { wipeArmed = true; return render(); }
+  wipeArmed = false;
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  state = demo(); isDemo = true; notes = []; tab = "lost";
+  render();
+});
+
+/* respaldo: solo si el visor permite guardar archivos */
+(async () => {
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (e) {}
+  if (!dl) return;
+  $("backup").hidden = false;
+  $("backup").addEventListener("click", async () => {
+    if (isDemo) { notes = []; note("warn", "Todavía no hay datos tuyos para respaldar."); return render(); }
+    notes = [];
+    try {
+      await dl.save({ filename: "radar-seguidores-" + new Date().toISOString().slice(0, 10) + ".json", data: JSON.stringify(state) });
+      note("ok", "Respaldo guardado.");
+    } catch (err) {
+      if (!err || err.code !== "declined") note("err", "No se pudo guardar el respaldo en este dispositivo.");
+    }
+    render();
+  });
+})();
+
+state = load();
+if (!state) { state = demo(); isDemo = true; }
+render();
+})();
+</script>
