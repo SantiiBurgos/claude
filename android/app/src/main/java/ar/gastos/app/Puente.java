@@ -23,7 +23,7 @@ final class Puente {
 
     @JavascriptInterface
     public int version() {
-        return 2;
+        return 3;
     }
 
     // ----- notificaciones -----

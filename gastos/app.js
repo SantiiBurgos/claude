@@ -51,8 +51,8 @@ const miles = n => n ? Number(n).toLocaleString('es-AR') : '';
 const sum = (a, f) => a.reduce((t, x) => t + f(x), 0);
 // Dentro de la app Android, la parte nativa se ve como window.Android; en el navegador no existe.
 const NATIVO = window.Android || null;
-const VERSION = 25; // subir junto con el nombre del caché en sw.js
-const NATIVO_ULTIMA = 2; // última versión publicada de la parte Android (Puente.version)
+const VERSION = 26; // subir junto con el nombre del caché en sw.js
+const NATIVO_ULTIMA = 3; // última versión publicada de la parte Android (Puente.version)
 const APK = 'https://github.com/SantiiBurgos/claude/releases/download/apk/';
 const RE_MONTO = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/;
 
@@ -113,7 +113,19 @@ let ym = hoy().slice(0, 7);
 let tab = 'inicio';
 let deudorSel = null; // persona abierta en "Me deben"
 let evoSel = null; // mes elegido en el gráfico de evolución
-const guardar = () => db.set('estado', S).catch(() => toast('No se pudo guardar'));
+// Cada guardado sube el número de revisión, para detectar si otra ventana de la app guardó después.
+const guardar = () => { S.rev = (S.rev || 0) + 1; return db.set('estado', S).catch(() => toast('No se pudo guardar')); };
+// Si hay dos ventanas abiertas, cada una tiene su copia en memoria: al volver a una, toma lo último guardado
+// en vez de seguir con datos viejos y pisar los cambios de la otra.
+async function sincronizar() {
+  if (hoja) return;
+  try {
+    const g = await db.get('estado');
+    if (g && (g.rev || 0) !== (S.rev || 0)) { S = { ...inicial(), ...g }; render(); }
+  } catch { /* si no se puede leer, sigue con lo que tiene */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sincronizar(); });
+window.addEventListener('focus', sincronizar);
 
 /* ---------- cálculos ---------- */
 // Cotización del dólar que rige en un mes: la última cargada hasta ese mes.
@@ -194,8 +206,14 @@ const diasSinRespaldo = () => S.ultimoRespaldo ? Math.round((Date.parse(hoy()) -
 
 // Compras hechas con tarjeta: se pagan en Mensual, pero se muestran el día en que se hicieron.
 const comprasCredito = () => S.compromisos.filter(c => c.fecha).map(c => ({ id: c.id, fecha: c.fecha, cat: c.cat, desc: c.nombre, cuentaId: c.cuentaId, img: c.img, credito: true, monto: c.monto * (c.tipo === 'cuotas' ? c.total : 1), plan: `${c.tipo === 'cuotas' ? c.total + ' cuotas' : '1 pago'} desde ${mesCorto(c.inicio)}` }));
+// Ingresos anotados con fecha (desde el formulario o el importador), para mostrarlos entre los movimientos del día.
+const ingresosSueltos = () => S.ingresos.filter(i => i.fecha && i.tipo === 'unico').map(i => ({ id: i.id, fecha: i.fecha, desc: i.nombre, monto: i.monto, img: i.img, ingreso: true, mes: i.inicio }));
 function filaMov(g, conFecha) {
   const cat = categoria(g.cat);
+  if (g.ingreso) return `<button class="row" data-act="editar-ing" data-id="${g.id}">
+    <span class="emoji">💰</span>
+    <span class="grow"><div class="t">${esc(g.desc)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}Ingreso${g.img ? ' · 📎' : ''}</div></span>
+    <span class="amt num pos">+ ${fmt(g.monto)}</span></button>`;
   return `<button class="row" data-act="${g.credito ? 'editar-comp' : 'editar-gasto'}" data-id="${g.id}">
     <span class="emoji">${esc(cat.emoji)}</span>
     <span class="grow"><div class="t">${esc(g.desc || cat.nombre)}</div><div class="s">${conFecha ? etiquetaDia(g.fecha) + ' · ' : ''}${marca(cuenta(g.cuentaId), 14)}${esc(cuenta(g.cuentaId).nombre)}${g.credito ? ' · ' + g.plan : ''}${propio(g) ? '' : ' · no cuenta'}${g.img ? ' · 📎' : ''}</div></span>
@@ -253,7 +271,7 @@ function vencimientos() {
 function vInicio() {
   const ing = totalIngresos(ym), comp = totalComps(ym), gas = totalGastos(ym);
   const pres = prestadoNeto(ym), queda = ing - comp - gas - pres;
-  const gs = [...gastosMes(ym), ...comprasCredito().filter(g => mesDe(g.fecha) === ym)].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
+  const gs = [...gastosMes(ym), ...comprasCredito().filter(g => mesDe(g.fecha) === ym), ...ingresosSueltos().filter(g => g.mes === ym)].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id));
   let presu = '';
   if (S.presupuesto > 0) {
     const pct = Math.min(100, gas / S.presupuesto * 100), libre = S.presupuesto - gas;
@@ -272,8 +290,8 @@ function vInicio() {
   for (const g of gs) {
     if (g.fecha !== dia) {
       dia = g.fecha;
-      const tot = sum(gs.filter(x => x.fecha === dia && !x.credito && propio(x)), x => x.monto);
-      lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num neg">${fmt(tot)}</span></h2><div class="card">`;
+      const tot = sum(gs.filter(x => x.fecha === dia && !x.credito && !x.ingreso && propio(x)), x => x.monto);
+      lista += `${lista ? '</div>' : ''}<h2><span>${etiquetaDia(dia)}</span><span class="num neg">${tot ? fmt(tot) : ''}</span></h2><div class="card">`;
     }
     lista += filaMov(g);
   }
@@ -1367,7 +1385,7 @@ window.nativoCompartido = async () => {
 // Al volver a la app: refresca por si se detectaron pagos nuevos.
 // Solo redibuja Inicio: en otras pantallas volver a dibujar reemplaza el campo de archivo justo cuando
 // Android está por entregarle el archivo elegido, y la carga se pierde sin aviso.
-window.nativoVolvio = () => { if (!hoja && tab === 'inicio') render(); };
+window.nativoVolvio = async () => { await sincronizar(); if (!hoja && tab === 'inicio') render(); };
 // Botón Atrás de Android: cierra el formulario o vuelve a Inicio. Devuelve false si no había nada que cerrar.
 window.atras = () => {
   if (hoja) { cerrar(); return true; }

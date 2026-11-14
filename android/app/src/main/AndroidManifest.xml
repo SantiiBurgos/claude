@@ -22,12 +22,24 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:exported="true"
+            android:documentLaunchMode="never"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- Recibe lo que se comparte desde otra app y se lo pasa a la única ventana de Gastos.
+             Sin esto, Android abre una segunda copia de la app dentro de la tarea de la app que compartió. -->
+        <activity
+            android:name=".CompartirActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
             <!-- Aparece en "Compartir" para fotos, PDF y texto. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

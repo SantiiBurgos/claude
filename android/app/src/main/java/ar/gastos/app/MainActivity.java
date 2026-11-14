@@ -12,8 +12,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,7 +24,6 @@ public class MainActivity extends Activity {
     private static final String HOST = "santiiburgos.github.io";
     private static final String INICIO = "https://" + HOST + "/claude/gastos/";
     private static final int ELEGIR_ARCHIVO = 1;
-    private static final int MAX_COMPARTIDO = 15 * 1024 * 1024;
     private static final String SIN_RED = "<html><meta name='viewport' content='width=device-width'>"
             + "<body style='font-family:sans-serif;background:#0f1110;color:#eef0ea;padding:48px 24px;text-align:center'>"
             + "<h2>Sin conexión</h2><p>La primera vez hace falta internet para bajar la app. Después funciona sin conexión.</p>"
@@ -97,7 +94,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        tomarCompartido(getIntent());
+        tomarCompartido();
         if (guardado == null) web.loadUrl(INICIO);
         else web.restoreState(guardado);
     }
@@ -144,33 +141,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        tomarCompartido(intent);
+        tomarCompartido();
     }
 
-    /** Si la app se abrió desde "Compartir", guarda el texto y el archivo para que la página los pida. */
-    private void tomarCompartido(Intent i) {
-        if (i == null || !Intent.ACTION_SEND.equals(i.getAction())) return;
-        String asunto = i.getStringExtra(Intent.EXTRA_SUBJECT), texto = i.getStringExtra(Intent.EXTRA_TEXT);
-        compTexto = ((asunto == null ? "" : asunto + " ") + (texto == null ? "" : texto)).trim();
-        compDatos = null;
-        compMime = "";
-        Uri u = i.getParcelableExtra(Intent.EXTRA_STREAM);
-        if (u != null) {
-            try (InputStream in = getContentResolver().openInputStream(u)) {
-                ByteArrayOutputStream o = new ByteArrayOutputStream();
-                byte[] b = new byte[65536];
-                int n;
-                while ((n = in.read(b)) > 0 && o.size() < MAX_COMPARTIDO) o.write(b, 0, n);
-                if (o.size() < MAX_COMPARTIDO) {
-                    compDatos = o.toByteArray();
-                    String m = getContentResolver().getType(u);
-                    compMime = m != null ? m : (i.getType() != null ? i.getType() : "");
-                }
-            } catch (Exception ignorada) {
-            }
-        }
-        // Evita volver a procesar lo mismo si Android recrea la pantalla.
-        setIntent(new Intent(Intent.ACTION_MAIN));
+    /** Toma lo que dejó CompartirActivity (si hay algo) para que la página lo pida. */
+    private void tomarCompartido() {
+        Compartido c = Compartido.tomar();
+        if (c == null) return;
+        compTexto = c.texto;
+        compMime = c.mime;
+        compDatos = c.datos;
         hayCompartido = true;
         avisarCompartido();
     }
@@ -182,6 +162,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        tomarCompartido();
         // Al volver a la app, que la página revise si hay movimientos nuevos detectados.
         if (lista) web.evaluateJavascript("window.nativoVolvio&&window.nativoVolvio()", null);
     }
